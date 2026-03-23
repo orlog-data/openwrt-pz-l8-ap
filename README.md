@@ -80,26 +80,37 @@ urandom-seed urngd zram-swap iw iwinfo
 
 ## AP 模式配置
 
-刷入固件后，配置网络为 AP 模式：
+刷入固件后，网络配置如下：
 
 ```bash
 # /etc/config/network
-config interface 'lan'
+config interface 'loopback'
+    option device 'lo'
+    option proto 'static'
+    option ipaddr '127.0.0.1'
+    option netmask '255.0.0.0'
+
+config device
+    option name 'br-lan'
     option type 'bridge'
-    option ifname 'eth0'
+    list ports 'eth0'
+
+config interface 'lan'
+    option device 'br-lan'
     option proto 'dhcp'
+
+# 静态 IP 备用地址（用于 DHCP 失败时管理访问）
+config interface 'lan_static'
+    option device 'br-lan'
+    option proto 'static'
+    option ipaddr '192.168.1.1'
+    option netmask '255.255.255.0'
 ```
 
-Mesh 配置：
-```bash
-# /etc/config/wireless
-config wifi-iface 'mesh'
-    option device 'radio1'
-    option mode 'mesh'
-    option mesh_id 'my-mesh'
-    option encryption 'sae'
-    option key 'your-password'
-```
+此配置：
+- 优先通过 DHCP 获取 IP 地址
+- 同时保留 `192.168.1.1` 作为备用管理地址
+- 无论 DHCP 是否成功，都可以通过 `192.168.1.1` 访问设备
 
 ## 已知问题
 
