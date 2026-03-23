@@ -101,6 +101,78 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      - name: Create custom files for AP mode
+        working-directory: openwrt
+        run: |
+          # Create custom files directory
+          mkdir -p files/etc/uci-defaults
+          mkdir -p files/etc/config
+          
+          # Network configuration for AP mode
+          # All ports (lan1, lan2, lan3, wan) bridged together
+          # DHCP client with static fallback on 192.168.1.1
+          cat > files/etc/config/network << 'EOF'
+          config interface 'loopback'
+              option device 'lo'
+              option proto 'static'
+              option ipaddr '127.0.0.1'
+              option netmask '255.0.0.0'
+
+          config device
+              option name 'br-lan'
+              option type 'bridge'
+              list ports 'lan1'
+              list ports 'lan2'
+              list ports 'lan3'
+              list ports 'wan'
+
+          config interface 'lan'
+              option device 'br-lan'
+              option proto 'dhcp'
+
+          config interface 'lan_static'
+              option device 'br-lan'
+              option proto 'static'
+              option ipaddr '192.168.1.1'
+              option netmask '255.255.255.0'
+          EOF
+
+          # uci-defaults script to ensure AP mode network config on first boot
+          cat > files/etc/uci-defaults/99-ap-mode-network << 'EOF'
+          #!/bin/sh
+          # AP Mode Network Configuration for CMCC PZ-L8
+          # Bridges all ports (lan1, lan2, lan3, wan) together
+
+          uci -q batch << 'UCI'
+          delete network.@device[0]
+          delete network.lan
+          delete network.wan
+          delete network.wan6
+
+          set network.br_lan='device'
+          set network.br_lan.name='br-lan'
+          set network.br_lan.type='bridge'
+          add_list network.br_lan.ports='lan1'
+          add_list network.br_lan.ports='lan2'
+          add_list network.br_lan.ports='lan3'
+          add_list network.br_lan.ports='wan'
+
+          set network.lan='interface'
+          set network.lan.device='br-lan'
+          set network.lan.proto='dhcp'
+
+          set network.lan_static='interface'
+          set network.lan_static.device='br-lan'
+          set network.lan_static.proto='static'
+          set network.lan_static.ipaddr='192.168.1.1'
+          set network.lan_static.netmask='255.255.255.0'
+          UCI
+
+          uci commit network
+          exit 0
+          EOF
+          chmod +x files/etc/uci-defaults/99-ap-mode-network
+
       - name: Generate configuration
         working-directory: openwrt
         run: |
@@ -120,6 +192,9 @@ jobs:
           # Image
           CONFIG_TARGET_ROOTFS_SQUASHFS=y
           CONFIG_TARGET_IMAGES_GZIP=y
+
+          # Include custom files
+          CONFIG_INCLUDE_CONFIG=y
 
           # Kernel
           CONFIG_KERNEL_CRASHLOG=y
@@ -206,6 +281,11 @@ jobs:
           Device: ${{ env.DEVICE }}
           Mode: AP Only with Mesh
           PR: #21495 applied
+          
+          Network Configuration:
+          - All ports (lan1, lan2, lan3, wan) bridged to br-lan
+          - DHCP client enabled
+          - Static fallback: 192.168.1.1
           EOF
 
       - name: Upload artifacts
@@ -229,5 +309,10 @@ jobs:
             - Mesh support (802.11s)
             - usteer for roaming
             - ath11k-smallbuffers for low-RAM optimization
+            
+            ## Network Configuration
+            - All ports (lan1, lan2, lan3, wan) bridged together
+            - DHCP client enabled
+            - Static fallback IP: 192.168.1.1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
