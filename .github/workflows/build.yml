@@ -1,313 +1,154 @@
 # GitHub Actions workflow for building OpenWrt firmware for CMCC PZ-L8
 # Target: AP mode only with mesh support
-# Based on PR #21495 for ath11k-smallbuffers support
+# Features: Optimized caching for faster builds
 
 name: Build OpenWrt for CMCC PZ-L8 (AP Mode)
 
 on:
   workflow_dispatch:
     inputs:
-      openwrt_version:
-        description: 'OpenWrt version/tag to build (default: snapshot)'
+      release_tag:
+        description: 'Release tag (leave empty for no release)'
         required: false
-        default: 'snapshot'
-      build_clean:
-        description: 'Clean build (rebuild from scratch)'
-        required: false
-        default: 'false'
-        type: boolean
+        default: ''
+  push:
+    tags:
+      - 'v*'
 
 env:
-  # Device configuration
   TARGET: qualcommax
   SUBTARGET: ipq50xx
   DEVICE: cmcc_pz-l8
-  
-  # Build configuration
-  BUILD_ROOT: /home/builder/openwrt
-  CACHE_DIR: /home/builder/cache
-  
-  # PR #21495 patch reference
-  PR_PATCH_REPO: https://github.com/openwrt/openwrt.git
-  PR_PATCH_REF: refs/pull/21495/head
 
 jobs:
   build:
-    name: Build OpenWrt Firmware
+    name: Build Firmware
     runs-on: ubuntu-22.04
-    permissions:
-      contents: write
+    timeout-minutes: 720
     
     steps:
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /usr/local/lib/android/sdk
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          sudo docker image prune --all --force
-          sudo apt-get clean
-          df -h
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 512
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
 
-      - name: Install build dependencies
+      - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            clang \
-            flex \
-            bison \
-            g++ \
-            gawk \
-            gcc-multilib \
-            g++-multilib \
-            gettext \
-            git \
-            libncurses-dev \
-            libssl-dev \
-            python3-distutils \
-            rsync \
-            swig \
-            unzip \
-            zlib1g-dev \
-            file \
-            wget \
-            curl \
-            jq \
-            device-tree-compiler \
-            python3-setuptools \
-            python3-dev \
-            ccache \
-            libelf-dev \
-            libdw-dev \
-            libiberty-dev
+            build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git \
+            libncurses-dev libssl-dev python3-distutils \
+            python3-setuptools python3-dev rsync swig unzip \
+            zlib1g-dev file wget curl jq device-tree-compiler \
+            ccache libelf-dev libdw-dev libiberty-dev
 
-      - name: Setup ccache
+      - name: Checkout OpenWrt
+        uses: actions/checkout@v4
+        with:
+          repository: openwrt/openwrt
+          ref: main
+          path: openwrt
+          fetch-depth: 0
+
+      - name: Fetch PR #21495
+        working-directory: openwrt
+        run: |
+          git fetch origin pull/21495/head:pr-21495
+          git config user.email "builder@github.com"
+          git config user.name "GitHub Actions"
+          git merge pr-21495 --no-edit || git merge pr-21495 --allow-unrelated-histories --no-edit || true
+
+      - name: Cache ccache
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ runner.os }}-${{ env.TARGET }}-${{ env.SUBTARGET }}
-          restore-keys: |
-            ccache-${{ runner.os }}-${{ env.TARGET }}-
-            ccache-${{ runner.os }}-
+          key: ccache-${{ env.TARGET }}-${{ hashFiles('openwrt/feeds.conf.default') }}
+          restore-keys: ccache-${{ env.TARGET }}-
+
+      - name: Cache toolchain
+        uses: actions/cache@v4
+        with:
+          path: openwrt/staging_dir
+          key: toolchain-${{ env.TARGET }}-${{ hashFiles('openwrt/include/version.mk') }}
+          restore-keys: toolchain-${{ env.TARGET }}-
+
+      - name: Cache build_dir
+        uses: actions/cache@v4
+        with:
+          path: |
+            openwrt/build_dir/host
+            openwrt/build_dir/target-aarch64_cortex-a53_musl
+          key: builddir-${{ env.TARGET }}-${{ hashFiles('openwrt/include/version.mk') }}
+          restore-keys: builddir-${{ env.TARGET }}-
 
       - name: Configure ccache
         run: |
           ccache --set-config=cache_dir=~/.ccache
-          ccache --set-config=max_size=5G
+          ccache --set-config=max_size=10G
           ccache --set-config=compression=true
           ccache -z
 
-      - name: Clone OpenWrt source
-        run: |
-          git clone --depth 1 --single-branch --branch main \
-            https://github.com/openwrt/openwrt.git openwrt
-          cd openwrt
-          echo "OPENWRT_COMMIT=$(git rev-parse HEAD)" >> $GITHUB_ENV
-          echo "OpenWrt commit: $(git rev-parse HEAD)"
-
-      - name: Fetch PR #21495 patches
-        run: |
-          cd openwrt
-          # Fetch the PR branch
-          git fetch origin pull/21495/head:pr-21495
-          
-          # Get the list of commits in the PR
-          echo "=== Commits in PR #21495 ==="
-          git log --oneline main..pr-21495 || true
-          
-          # Get PR commit count
-          PR_COMMIT_COUNT=$(git rev-list --count main..pr-21495 2>/dev/null || echo "0")
-          echo "PR has $PR_COMMIT_COUNT commits"
-          
-          # Store PR info for later use
-          echo "PR_COMMIT_COUNT=$PR_COMMIT_COUNT" >> $GITHUB_ENV
-
-      - name: Apply PR #21495 patches
-        run: |
-          cd openwrt
-          
-          # Try to merge the PR
-          echo "Attempting to merge PR #21495..."
-          git config user.email "builder@example.com"
-          git config user.name "Builder"
-          
-          # Merge with strategy option to allow unrelated histories if needed
-          if ! git merge pr-21495 --no-edit; then
-            echo "Merge failed, trying cherry-pick approach..."
-            
-            # Get all commits from the PR
-            COMMITS=$(git rev-list --reverse main..pr-21495 2>/dev/null || true)
-            
-            if [ -n "$COMMITS" ]; then
-              for commit in $COMMITS; do
-                echo "Cherry-picking: $(git log -1 --oneline $commit)"
-                if ! git cherry-pick --strategy=recursive -X theirs $commit --no-commit; then
-                  echo "Skipping problematic commit: $commit"
-                  git cherry-pick --abort || true
-                fi
-              done
-              git commit -m "Applied PR #21495 patches" --allow-empty || true
-            fi
-          fi
-          
-          echo "=== Applied patches ==="
-          git log --oneline -10
-
       - name: Update feeds
+        working-directory: openwrt
         run: |
-          cd openwrt
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
-      - name: Create custom package list
+      - name: Generate configuration
+        working-directory: openwrt
         run: |
-          # Create the package configuration file
-          cat > /tmp/custom_packages.txt << 'EOF'
-          # Official OpenWrt packages for AP mode
-          apk-mbedtls
-          base-files
-          ca-bundle
-          dropbear
-          fstools
-          kmod-ath11k-ahb
-          kmod-gpio-button-hotplug
-          kmod-leds-gpio
-          kmod-qca-nss-dp
-          libc
-          libgcc
-          libustream-mbedtls
-          logd
-          luci-i18n-base-zh-cn
-          luci-i18n-package-manager-zh-cn
-          luci-i18n-usteer-zh-cn
-          mtd
-          netifd
-          procd-ujail
-          uboot-envtools
-          uci
-          uclient-fetch
-          urandom-seed
-          urngd
-          wpad-mesh-mbedtls
-          zram-swap
-          luci-base
-          luci-mod-admin-full
-          luci-theme-bootstrap
-          uhttpd
-          uhttpd-mod-ubus
-          # Packages from PR #21495 for better WiFi support on low-RAM devices
-          kmod-ath11k-smallbuffers
-          ath11k-firmware-ipq5018-qcn6122
-          ipq-wifi-cmcc_pz-l8
-          # Mesh and roaming support
-          usteer
-          # Additional useful packages for AP mode
-          iw
-          iwinfo
-          luci-app-usteer
-          EOF
-          
-          echo "Custom package list created:"
-          cat /tmp/custom_packages.txt
-
-      - name: Configure build
-        run: |
-          cd openwrt
-          
-          # Start with a minimal configuration
-          cat > .config << 'CONFIGEOF'
-          # Target configuration
+          cat > .config << 'EOF'
+          # Target
           CONFIG_TARGET_qualcommax=y
           CONFIG_TARGET_qualcommax_ipq50xx=y
-          CONFIG_TARGET_QUALCOMMAX=y
           CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_cmcc_pz-l8=y
-          
-          # Build options
+
+          # Build
           CONFIG_DEVEL=y
           CONFIG_CCACHE=y
           CONFIG_USE_CCACHE=y
-          CONFIG_CCACHE_DIR="~/.ccache"
-          CONFIG_EXTERNAL_TOOLCHAIN=n
-          
-          # Image options
+          CONFIG_ALL_KMODS=y
+          CONFIG_ALL_NONSHARED=y
+
+          # Image
           CONFIG_TARGET_ROOTFS_SQUASHFS=y
-          CONFIG_TARGET_ROOTFS_JFFS2=n
-          CONFIG_TARGET_ROOTFS_EXT4FS=n
-          CONFIG_TARGET_ROOTFS_TARGZ=n
-          CONFIG_TARGET_ROOTFS_CPIOGZ=n
           CONFIG_TARGET_IMAGES_GZIP=y
-          
-          # Kernel options
+
+          # Kernel
           CONFIG_KERNEL_CRASHLOG=y
           CONFIG_KERNEL_SWAP=y
           CONFIG_KERNEL_DEBUG_FS=y
-          CONFIG_KERNEL_PERF_EVENTS=y
-          
-          # Package build options
-          CONFIG_ALL_KMODS=y
-          CONFIG_ALL_NONSHARED=y
-          
-          # Busybox configuration - minimal for AP
-          CONFIG_BUSYBOX_CUSTOM=y
-          CONFIG_BUSYBOX_CONFIG_FEATURE_SH_IS_ASH=y
-          
-          # Disable unwanted components (DNS, DHCP, Firewall, PPP)
+
+          # Disable router components
           CONFIG_PACKAGE_dnsmasq=n
-          CONFIG_PACKAGE_dnsmasq-full=n
-          CONFIG_PACKAGE_dnsmasq-dhcpv6=n
           CONFIG_PACKAGE_odhcpd=n
-          CONFIG_PACKAGE_odhcpd-ipv6only=n
-          CONFIG_PACKAGE_dhcp-server=n
-          CONFIG_PACKAGE_firewall=n
-          CONFIG_PACKAGE_firewall3=n
           CONFIG_PACKAGE_firewall4=n
-          CONFIG_PACKAGE_libc=n
-          CONFIG_PACKAGE_libcrypt=n
           CONFIG_PACKAGE_ppp=n
           CONFIG_PACKAGE_ppp-mod-pppoe=n
-          CONFIG_PACKAGE_ppp-mod-pppol2tp=n
-          CONFIG_PACKAGE_ppp-mod-pptp=n
-          CONFIG_PACKAGE_chat=n
-          CONFIG_PACKAGE_6in4=n
-          CONFIG_PACKAGE_6rd=n
-          CONFIG_PACKAGE_6to4=n
-          CONFIG_PACKAGE_ds-lite=n
           CONFIG_PACKAGE_luci-app-firewall=n
-          CONFIG_PACKAGE_luci-app-ddns=n
-          CONFIG_PACKAGE_luci-app-vpn-policy-routing=n
-          
-          # OpenSSL/libustream configuration
-          CONFIG_OPENSSL_WITH_ASM=y
-          CONFIG_OPENSSL_WITH_DEPRECATED=y
-          CONFIG_OPENSSL_WITH_ERROR_MESSAGES=y
-          CONFIG_OPENSSL_WITH_TLS13=y
-          
-          # Use mbedtls for smaller footprint
+
+          # mbedtls
           CONFIG_PACKAGE_libustream-mbedtls=y
-          CONFIG_PACKAGE_libustream-openssl=n
-          CONFIG_PACKAGE_libustream-wolfssl=n
-          
-          # WPAD configuration for mesh
-          CONFIG_PACKAGE_wpad-mesh-mbedtls=y
-          CONFIG_PACKAGE_wpad-basic=n
-          CONFIG_PACKAGE_wpad-basic-wolfssl=n
-          CONFIG_PACKAGE_wpad-basic-openssl=n
-          CONFIG_PACKAGE_wpad-basic-mbedtls=n
-          CONFIG_PACKAGE_wpad-mini=n
-          CONFIG_PACKAGE_wpad=n
-          
-          # ath11k configuration
+
+          # WiFi
           CONFIG_PACKAGE_kmod-ath11k-ahb=y
           CONFIG_PACKAGE_kmod-ath11k-smallbuffers=y
-          CONFIG_PACKAGE_kmod-ath=y
-          CONFIG_PACKAGE_kmod-ath10k=n
-          CONFIG_PACKAGE_kmod-cfg80211=y
-          CONFIG_PACKAGE_kmod-mac80211=y
           CONFIG_PACKAGE_ath11k-firmware-ipq5018-qcn6122=y
           CONFIG_PACKAGE_ipq-wifi-cmcc_pz-l8=y
-          
-          # LuCI configuration - lightweight
+          CONFIG_PACKAGE_wpad-mesh-mbedtls=y
+
+          # Mesh
+          CONFIG_PACKAGE_usteer=y
+          CONFIG_PACKAGE_luci-app-usteer=y
+
+          # LuCI minimal
           CONFIG_PACKAGE_luci-base=y
           CONFIG_PACKAGE_luci-mod-admin-full=y
           CONFIG_PACKAGE_luci-theme-bootstrap=y
@@ -316,25 +157,9 @@ jobs:
           CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y
           CONFIG_PACKAGE_uhttpd=y
           CONFIG_PACKAGE_uhttpd-mod-ubus=y
-          
-          # Disable full LuCI
           CONFIG_PACKAGE_luci=n
-          CONFIG_PACKAGE_luci-ssl=n
-          CONFIG_PACKAGE_luci-app-acme=n
-          CONFIG_PACKAGE_luci-app-aria2=n
-          CONFIG_PACKAGE_luci-app-commands=n
-          CONFIG_PACKAGE_luci-app-minidlna=n
-          CONFIG_PACKAGE_luci-app-mjpg-streamer=n
-          CONFIG_PACKAGE_luci-app-statistics=n
-          CONFIG_PACKAGE_luci-app-transmission=n
-          CONFIG_PACKAGE_luci-app-upnp=n
-          CONFIG_PACKAGE_luci-app-wol=n
-          
-          # Mesh and usteer support
-          CONFIG_PACKAGE_usteer=y
-          CONFIG_PACKAGE_luci-app-usteer=y
-          
-          # Essential packages
+
+          # Core
           CONFIG_PACKAGE_apk-mbedtls=y
           CONFIG_PACKAGE_base-files=y
           CONFIG_PACKAGE_ca-bundle=y
@@ -343,171 +168,66 @@ jobs:
           CONFIG_PACKAGE_kmod-gpio-button-hotplug=y
           CONFIG_PACKAGE_kmod-leds-gpio=y
           CONFIG_PACKAGE_kmod-qca-nss-dp=y
-          CONFIG_PACKAGE_libc=y
-          CONFIG_PACKAGE_libgcc=y
           CONFIG_PACKAGE_logd=y
           CONFIG_PACKAGE_mtd=y
           CONFIG_PACKAGE_netifd=y
           CONFIG_PACKAGE_procd-ujail=y
           CONFIG_PACKAGE_uboot-envtools=y
           CONFIG_PACKAGE_uci=y
-          CONFIG_PACKAGE_uclient-fetch=y
           CONFIG_PACKAGE_urandom-seed=y
           CONFIG_PACKAGE_urngd=y
           CONFIG_PACKAGE_zram-swap=y
-          
-          # Useful tools for AP mode
           CONFIG_PACKAGE_iw=y
           CONFIG_PACKAGE_iwinfo=y
-          CONFIGEOF
-
-          # Expand the configuration
+          EOF
           make defconfig
 
-          # Show configuration summary
-          echo "=== Configuration Summary ==="
-          grep "^CONFIG_TARGET" .config || true
-          echo "=== Package Selection ==="
-          grep "^CONFIG_PACKAGE.*=y" .config | wc -l
-          echo "packages selected"
-
       - name: Download sources
-        run: |
-          cd openwrt
-          make download -j$(nproc) || make download -j1 V=s
-          
-      - name: Build tools (toolchain)
-        run: |
-          cd openwrt
-          make tools/install -j$(nproc) || make tools/install -j1 V=s
-          
-      - name: Build toolchain
-        run: |
-          cd openwrt
-          make toolchain/install -j$(nproc) || make toolchain/install -j1 V=s
+        working-directory: openwrt
+        run: make download -j$(nproc)
 
-      - name: Build kernel
-        run: |
-          cd openwrt
-          make target/linux/compile -j$(nproc) || make target/linux/compile -j1 V=s
+      - name: Build
+        working-directory: openwrt
+        run: make -j$(nproc) V=w || make -j1 V=s
 
-      - name: Build packages
-        run: |
-          cd openwrt
-          # Build all packages
-          make package/compile -j$(nproc) || make package/compile -j1 V=s
-          
-          # Build index
-          make package/index
+      - name: Show ccache stats
+        run: ccache -s
 
-      - name: Build firmware image
+      - name: Prepare artifacts
         run: |
-          cd openwrt
-          make target/linux/install -j$(nproc) || make target/linux/install -j1 V=s
-          make package/install -j$(nproc) || make package/install -j1 V=s
-          make image/install -j$(nproc) || make image/install -j1 V=s
-
-      - name: Show build stats
-        run: |
-          echo "=== Build Statistics ==="
-          ccache -s
-          echo "=== Disk Usage ==="
-          df -h
-          echo "=== Image Files ==="
-          ls -la openwrt/bin/targets/qualcommax/ipq50xx/ || true
-
-      - name: Prepare release files
-        run: |
-          cd openwrt
-          
-          # Create release directory
           mkdir -p release
+          find openwrt/bin/targets -name "*.bin" -exec cp {} release/ \;
+          find openwrt/bin/targets -name "*.img.gz" -exec cp {} release/ \;
+          cd release && sha256sum * > sha256sums
           
-          # Copy firmware images
-          if [ -d "bin/targets/qualcommax/ipq50xx" ]; then
-            cp bin/targets/qualcommax/ipq50xx/*cmcc*pz-l8* release/ || true
-            cp bin/targets/qualcommax/ipq50xx/*.bin release/ || true
-            cp bin/targets/qualcommax/ipq50xx/*.img.gz release/ || true
-          fi
-          
-          # Generate build info
-          cat > release/BUILD_INFO.txt << EOF
-          OpenWrt Firmware for CMCC PZ-L8 (AP Mode)
-          =========================================
-          
-          Build Date: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-          OpenWrt Commit: ${{ env.OPENWRT_COMMIT }}
+          cat > BUILD_INFO.txt << EOF
+          Build: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           Target: ${{ env.TARGET }}/${{ env.SUBTARGET }}
           Device: ${{ env.DEVICE }}
-          
-          Features:
-          - AP Mode Only (no router functions)
-          - Mesh support (802.11s)
-          - usteer for wireless roaming
-          - ath11k-smallbuffers for low-RAM optimization
-          
-          Removed Components:
-          - DNS server (dnsmasq)
-          - DHCP server
-          - Firewall
-          - PPP/PPPoE client
-          
-          Included Patches:
-          - PR #21495: ath11k-smallbuffers and related fixes
-          
-          Package List:
-          $(grep "^CONFIG_PACKAGE.*=y" .config | sed 's/CONFIG_PACKAGE_//' | sed 's/=y//' | sort)
+          Mode: AP Only with Mesh
+          PR: #21495 applied
           EOF
-          
-          # Calculate checksums
-          cd release
-          sha256sum * > sha256sums 2>/dev/null || true
-          
-          echo "=== Release Files ==="
-          ls -la
 
-      - name: Upload firmware artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-cmcc-pz-l8-ap-${{ github.run_number }}
-          path: openwrt/release/*
+          name: openwrt-${{ env.DEVICE }}-${{ github.run_number }}
+          path: release/
           retention-days: 30
 
-      - name: Create release on tag
-        if: startsWith(github.ref, 'refs/tags/')
+      - name: Create release
+        if: inputs.release_tag != '' || startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v1
         with:
-          files: openwrt/release/*
-          generate_release_notes: true
+          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          files: release/*
+          body: |
+            OpenWrt Firmware for CMCC PZ-L8 (AP Mode)
+            
+            ## Features
+            - AP Mode Only
+            - Mesh support (802.11s)
+            - usteer for roaming
+            - ath11k-smallbuffers for low-RAM optimization
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Optional: Build summary job
-  summary:
-    name: Build Summary
-    needs: build
-    runs-on: ubuntu-latest
-    if: always()
-    
-    steps:
-      - name: Build Summary
-        run: |
-          echo "## Build Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Configuration" >> $GITHUB_STEP_SUMMARY
-          echo "- **Target**: qualcommax/ipq50xx" >> $GITHUB_STEP_SUMMARY
-          echo "- **Device**: CMCC PZ-L8" >> $GITHUB_STEP_SUMMARY
-          echo "- **Mode**: AP Only" >> $GITHUB_STEP_SUMMARY
-          echo "- **PR Applied**: #21495" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Features" >> $GITHUB_STEP_SUMMARY
-          echo "- Mesh support (802.11s with wpad-mesh-mbedtls)" >> $GITHUB_STEP_SUMMARY
-          echo "- usteer for wireless roaming" >> $GITHUB_STEP_SUMMARY
-          echo "- ath11k-smallbuffers for memory optimization" >> $GITHUB_STEP_SUMMARY
-          echo "- Lightweight LuCI (no full package)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Removed Components" >> $GITHUB_STEP_SUMMARY
-          echo "- DNS server (dnsmasq)" >> $GITHUB_STEP_SUMMARY
-          echo "- DHCP server (odhcpd)" >> $GITHUB_STEP_SUMMARY
-          echo "- Firewall (firewall3/4)" >> $GITHUB_STEP_SUMMARY
-          echo "- PPP/PPPoE client" >> $GITHUB_STEP_SUMMARY
