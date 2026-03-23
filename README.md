@@ -16,6 +16,7 @@
 ## 固件特点
 
 - **AP 模式优化**: 移除了 DNS、DHCP、防火墙、PPPoE 等路由组件
+- **全端口桥接**: lan1, lan2, lan3, wan 全部桥接到 br-lan
 - **Mesh 支持**: 802.11s mesh + usteer 漫游
 - **内存优化**: ath11k-smallbuffers 驱动 + zram-swap
 - **精简 LuCI**: 仅保留必要界面
@@ -78,9 +79,9 @@ logd mtd netifd procd-ujail uboot-envtools uci
 urandom-seed urngd zram-swap iw iwinfo
 ```
 
-## AP 模式配置
+## 预置网络配置
 
-刷入固件后，网络配置如下：
+固件内置以下网络配置，无需手动修改：
 
 ```bash
 # /etc/config/network
@@ -93,13 +94,15 @@ config interface 'loopback'
 config device
     option name 'br-lan'
     option type 'bridge'
-    list ports 'eth0'
+    list ports 'lan1'
+    list ports 'lan2'
+    list ports 'lan3'
+    list ports 'wan'
 
 config interface 'lan'
     option device 'br-lan'
     option proto 'dhcp'
 
-# 静态 IP 备用地址（用于 DHCP 失败时管理访问）
 config interface 'lan_static'
     option device 'br-lan'
     option proto 'static'
@@ -107,10 +110,19 @@ config interface 'lan_static'
     option netmask '255.255.255.0'
 ```
 
-此配置：
-- 优先通过 DHCP 获取 IP 地址
-- 同时保留 `192.168.1.1` 作为备用管理地址
-- 无论 DHCP 是否成功，都可以通过 `192.168.1.1` 访问设备
+### 端口映射
+
+| 端口 | 原始功能 | AP 模式 |
+|------|----------|---------|
+| lan1 | LAN | br-lan |
+| lan2 | LAN | br-lan |
+| lan3 | LAN | br-lan |
+| wan | WAN | br-lan |
+
+### IP 地址
+
+- **DHCP**: 自动从上游路由器获取 IP
+- **静态备用**: 始终可通过 `192.168.1.1` 访问设备
 
 ## 已知问题
 
