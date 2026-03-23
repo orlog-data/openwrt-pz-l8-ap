@@ -1,0 +1,34 @@
+# OpenWrt build directory
+openwrt/
+
+# Build artifacts
+bin/
+build_dir/
+staging_dir/
+tmp/
+logs/
+
+# Cache
+.ccache/
+cache/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Archives
+*.tar.gz
+*.tar.xz
+*.zip
