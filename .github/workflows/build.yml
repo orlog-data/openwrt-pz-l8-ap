@@ -80,8 +80,7 @@ jobs:
             ccache \
             libelf-dev \
             libdw-dev \
-            libiberty-dev \
-            astmanberry
+            libiberty-dev
 
       - name: Setup ccache
         uses: actions/cache@v4
