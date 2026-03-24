@@ -367,19 +367,21 @@ jobs:
 
           echo ""
           echo "=== Checking package contents ==="
-          IPK_FILE=$(find bin -name "ipq-wifi-cmcc_pz-l8*.ipk" 2>/dev/null | head -1)
-          if [ -n "$IPK_FILE" ]; then
-            echo "Found package: $IPK_FILE"
-            echo "Package size: $(ls -lh "$IPK_FILE" | awk '{print $5}')"
+          # OpenWrt now uses .apk format (like Alpine Linux)
+          PKG_FILE=$(find bin -name "ipq-wifi-cmcc_pz-l8*.apk" 2>/dev/null | head -1)
+          if [ -n "$PKG_FILE" ]; then
+            echo "Found package: $PKG_FILE"
+            echo "Package size: $(ls -lh "$PKG_FILE" | awk '{print $5}')"
 
-            # Extract and check contents
+            # Extract .apk and check contents
             TEMP_DIR=$(mktemp -d)
-            tar -xzf "$IPK_FILE" -C "$TEMP_DIR" 2>/dev/null || true
-            if [ -f "$TEMP_DIR/data.tar.gz" ]; then
-              echo ""
-              echo "=== BDF files in package ==="
-              tar -tzf "$TEMP_DIR/data.tar.gz" | grep -E "board.*bin|ath11k" || echo "No board files found in package!"
-            fi
+            tar -xzf "$PKG_FILE" -C "$TEMP_DIR" 2>/dev/null || true
+            echo ""
+            echo "=== BDF files in package ==="
+            find "$TEMP_DIR" -name "*.bin" -o -name "board*" 2>/dev/null | head -20 || echo "No board files found in package!"
+            echo ""
+            echo "=== Full package file list ==="
+            find "$TEMP_DIR" -type f 2>/dev/null | head -30 || true
             rm -rf "$TEMP_DIR"
           else
             echo "ERROR: ipq-wifi-cmcc_pz-l8 package not built!"
