@@ -1,6 +1,6 @@
 # GitHub Actions workflow for building OpenWrt firmware for CMCC PZ-L8
 # Target: AP mode only with mesh support
-# Features: Optimized caching for faster builds
+# Features: Optimized caching for faster builds, WiFi BDF from firmware_qca-wireless PR #106
 
 name: Build OpenWrt for CMCC PZ-L8 (AP Mode)
 
@@ -64,6 +64,57 @@ jobs:
           git config user.email "builder@github.com"
           git config user.name "GitHub Actions"
           git merge pr-21495 --no-edit || git merge pr-21495 --allow-unrelated-histories --no-edit || true
+
+      - name: Download BDF files for PZ-L8 WiFi
+        working-directory: openwrt
+        run: |
+          # According to ipq-wifi Makefile:
+          # "To add local files for testing:
+          #  1. create a new directory in the ipq-wifi package directory called "files".
+          #  2. place there the needed board files."
+          
+          # Create files directory for local board files
+          mkdir -p package/firmware/ipq-wifi/files
+          
+          # Download BDF files from firmware_qca-wireless PR #106
+          # These files were extracted from official PZ-L8 firmware 501.11
+          # by sqliuchang and encoded using ath11k-bdencoder
+          
+          # IPQ5000 (2.4GHz SoC built-in WiFi)
+          # BoardNames: bus=ahb,qmi-chip-id=0,qmi-board-id=255,variant=CMCC-PZ-L8
+          curl -L -o package/firmware/ipq-wifi/files/board-cmcc_pz-l8.ipq5018 \
+            "https://github.com/openwrt/firmware_qca-wireless/raw/f7ad5fee1924efdb5d8b2d1bf95bd3867d22e701/board-cmcc_pz-l8.ipq5018"
+          
+          # QCN6102 (5GHz external WiFi module)
+          # BoardNames: bus=ahb,qmi-chip-id=0,qmi-board-id=255,variant=CMCC-PZ-L8
+          curl -L -o package/firmware/ipq-wifi/files/board-cmcc_pz-l8.qcn6122 \
+            "https://github.com/openwrt/firmware_qca-wireless/raw/f7ad5fee1924efdb5d8b2d1bf95bd3867d22e701/board-cmcc_pz-l8.qcn6122"
+          
+          # Verify downloads
+          echo "Downloaded BDF files:"
+          ls -la package/firmware/ipq-wifi/files/
+          
+          # Check file sizes (should be ~131KB each, MD5 from PR #106)
+          SIZE_IPQ=$(stat -c%s "package/firmware/ipq-wifi/files/board-cmcc_pz-l8.ipq5018")
+          SIZE_QCN=$(stat -c%s "package/firmware/ipq-wifi/files/board-cmcc_pz-l8.qcn6122")
+          
+          echo "IPQ5018 BDF size: $SIZE_IPQ bytes (expected: 131176)"
+          echo "QCN6122 BDF size: $SIZE_QCN bytes (expected: 131176)"
+          
+          # Verify MD5 checksums
+          MD5_IPQ=$(md5sum "package/firmware/ipq-wifi/files/board-cmcc_pz-l8.ipq5018" | cut -d' ' -f1)
+          MD5_QCN=$(md5sum "package/firmware/ipq-wifi/files/board-cmcc_pz-l8.qcn6122" | cut -d' ' -f1)
+          
+          echo "IPQ5018 MD5: $MD5_IPQ (expected: 95bc22178d4a3a3c63a5b258f3849c84)"
+          echo "QCN6122 MD5: $MD5_QCN (expected: e7f17e4b791a83ca919f6954ce16a350)"
+          
+          if [ "$SIZE_IPQ" -lt 100000 ] || [ "$SIZE_QCN" -lt 100000 ]; then
+            echo "ERROR: BDF files appear to be incomplete or corrupted"
+            exit 1
+          fi
+          
+          echo "BDF files downloaded and verified successfully!"
+          echo "Files will be installed to /lib/firmware/ath11k/IPQ5018/hw1.0/board-2.bin"
 
       - name: Cache ccache
         uses: actions/cache@v4
@@ -212,7 +263,7 @@ jobs:
           # mbedtls
           CONFIG_PACKAGE_libustream-mbedtls=y
 
-          # WiFi
+          # WiFi - ath11k-smallbuffers for 256MB RAM devices
           CONFIG_PACKAGE_kmod-ath11k-ahb=y
           CONFIG_PACKAGE_kmod-ath11k-smallbuffers=y
           CONFIG_PACKAGE_ath11k-firmware-ipq5018-qcn6122=y
@@ -280,12 +331,18 @@ jobs:
           Target: ${{ env.TARGET }}/${{ env.SUBTARGET }}
           Device: ${{ env.DEVICE }}
           Mode: AP Only with Mesh
-          PR: #21495 applied
+          PR: #21495 applied (ath11k-smallbuffers)
+          BDF: firmware_qca-wireless PR #106 (from official 501.11 firmware)
           
           Network Configuration:
           - All ports (lan1, lan2, lan3, wan) bridged to br-lan
           - DHCP client enabled
           - Static fallback: 192.168.1.1
+          
+          WiFi:
+          - 2.4GHz: IPQ5000 (SoC built-in)
+          - 5GHz: QCN6102
+          - Driver: ath11k-smallbuffers (optimized for 256MB RAM)
           EOF
 
       - name: Upload artifacts
@@ -308,11 +365,20 @@ jobs:
             - AP Mode Only
             - Mesh support (802.11s)
             - usteer for roaming
-            - ath11k-smallbuffers for low-RAM optimization
+            - ath11k-smallbuffers for low-RAM optimization (256MB)
+            - WiFi BDF from official firmware 501.11
             
             ## Network Configuration
             - All ports (lan1, lan2, lan3, wan) bridged together
             - DHCP client enabled
             - Static fallback IP: 192.168.1.1
+            
+            ## WiFi
+            - 2.4GHz: IPQ5000 (SoC built-in)
+            - 5GHz: QCN6102
+            
+            ## Known Issues
+            - First boot may take longer due to uci-defaults execution
+            - WiFi may need a few seconds to initialize after boot
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
