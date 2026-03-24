@@ -252,13 +252,21 @@ jobs:
           CONFIG_KERNEL_SWAP=y
           CONFIG_KERNEL_DEBUG_FS=y
 
-          # Disable router components
+          # Disable router components (use =m to exclude from image, or explicit n)
+          # Note: DEFAULT_PACKAGES.router includes odhcp6c, odhcpd-ipv6only, etc.
+          # Setting =n may not work for default packages, we need to explicitly exclude
           CONFIG_PACKAGE_dnsmasq=n
           CONFIG_PACKAGE_odhcpd=n
+          CONFIG_PACKAGE_odhcpd-ipv6only=n
+          CONFIG_PACKAGE_odhcp6c=n
           CONFIG_PACKAGE_firewall4=n
+          CONFIG_PACKAGE_nftables=n
+          CONFIG_PACKAGE_kmod-nft-offload=n
           CONFIG_PACKAGE_ppp=n
           CONFIG_PACKAGE_ppp-mod-pppoe=n
           CONFIG_PACKAGE_luci-app-firewall=n
+          CONFIG_PACKAGE_luci-proto-ipv6=n
+          CONFIG_PACKAGE_luci-proto-ppp=n
 
           # mbedtls
           CONFIG_PACKAGE_libustream-mbedtls=y
