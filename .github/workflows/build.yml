@@ -227,6 +227,10 @@ jobs:
       - name: Generate configuration
         working-directory: openwrt
         run: |
+          # First generate default config for the device
+          make defconfig
+
+          # Now create our custom config
           cat > .config << 'EOF'
           # Target
           CONFIG_TARGET_qualcommax=y
@@ -252,21 +256,20 @@ jobs:
           CONFIG_KERNEL_SWAP=y
           CONFIG_KERNEL_DEBUG_FS=y
 
-          # Disable router components (use =m to exclude from image, or explicit n)
-          # Note: DEFAULT_PACKAGES.router includes odhcp6c, odhcpd-ipv6only, etc.
-          # Setting =n may not work for default packages, we need to explicitly exclude
-          CONFIG_PACKAGE_dnsmasq=n
-          CONFIG_PACKAGE_odhcpd=n
-          CONFIG_PACKAGE_odhcpd-ipv6only=n
-          CONFIG_PACKAGE_odhcp6c=n
-          CONFIG_PACKAGE_firewall4=n
-          CONFIG_PACKAGE_nftables=n
-          CONFIG_PACKAGE_kmod-nft-offload=n
-          CONFIG_PACKAGE_ppp=n
-          CONFIG_PACKAGE_ppp-mod-pppoe=n
-          CONFIG_PACKAGE_luci-app-firewall=n
-          CONFIG_PACKAGE_luci-proto-ipv6=n
-          CONFIG_PACKAGE_luci-proto-ppp=n
+          # Disable router components - use =m to compile but NOT install to image
+          # This is the reliable way to exclude default packages
+          CONFIG_PACKAGE_dnsmasq=m
+          CONFIG_PACKAGE_odhcpd=m
+          CONFIG_PACKAGE_odhcpd-ipv6only=m
+          CONFIG_PACKAGE_odhcp6c=m
+          CONFIG_PACKAGE_firewall4=m
+          CONFIG_PACKAGE_nftables=m
+          CONFIG_PACKAGE_kmod-nft-offload=m
+          CONFIG_PACKAGE_ppp=m
+          CONFIG_PACKAGE_ppp-mod-pppoe=m
+          CONFIG_PACKAGE_luci-app-firewall=m
+          CONFIG_PACKAGE_luci-proto-ipv6=m
+          CONFIG_PACKAGE_luci-proto-ppp=m
 
           # mbedtls
           CONFIG_PACKAGE_libustream-mbedtls=y
@@ -286,12 +289,9 @@ jobs:
           CONFIG_PACKAGE_luci-base=y
           CONFIG_PACKAGE_luci-mod-admin-full=y
           CONFIG_PACKAGE_luci-theme-bootstrap=y
-          CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
-          CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
-          CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y
           CONFIG_PACKAGE_uhttpd=y
           CONFIG_PACKAGE_uhttpd-mod-ubus=y
-          CONFIG_PACKAGE_luci=n
+          CONFIG_PACKAGE_luci=m
 
           # Core
           CONFIG_PACKAGE_apk-mbedtls=y
@@ -314,7 +314,31 @@ jobs:
           CONFIG_PACKAGE_iw=y
           CONFIG_PACKAGE_iwinfo=y
           EOF
+
+          # Run defconfig to normalize
           make defconfig
+
+          # Now FORCE language packages to be included (=y not =m)
+          # These must be set AFTER defconfig to override defaults
+          sed -i 's/CONFIG_PACKAGE_luci-i18n-base-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-base-zh-cn=y/' .config
+          sed -i 's/CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y/' .config
+          sed -i 's/CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y/' .config
+
+          # Add them if they don't exist
+          grep -q 'CONFIG_PACKAGE_luci-i18n-base-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-base-zh-cn=y' >> .config
+          grep -q 'CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y' >> .config
+          grep -q 'CONFIG_PACKAGE_luci-i18n-usteer-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y' >> .config
+
+          # Force DHCP packages to =m (not in image)
+          sed -i 's/CONFIG_PACKAGE_odhcpd-ipv6only=.*/CONFIG_PACKAGE_odhcpd-ipv6only=m/' .config
+          sed -i 's/CONFIG_PACKAGE_odhcp6c=.*/CONFIG_PACKAGE_odhcp6c=m/' .config
+          sed -i 's/CONFIG_PACKAGE_dnsmasq=.*/CONFIG_PACKAGE_dnsmasq=m/' .config
+          sed -i 's/CONFIG_PACKAGE_odhcpd=.*/CONFIG_PACKAGE_odhcpd=m/' .config
+
+          # Show final package selections
+          echo "=== Final package configuration ==="
+          grep -E 'CONFIG_PACKAGE_(luci-i18n|odhcp|dnsmasq|firewall|ppp)' .config || true
+          echo "==================================="
 
       - name: Download sources
         working-directory: openwrt
