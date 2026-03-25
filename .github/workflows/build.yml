@@ -207,6 +207,21 @@ jobs:
           EOF
           chmod +x files/etc/uci-defaults/99-ap-mode-network
 
+          # IPv6 configuration for AP mode
+          # Enable receiving Router Advertisements to get IPv6 address via SLAAC
+          # Disable forwarding so kernel accepts RA (forwarding=1 means router mode)
+          mkdir -p files/etc/sysctl.d
+          cat > files/etc/sysctl.d/99-ipv6-ap.conf << 'EOF'
+          # IPv6 AP Mode Configuration
+          # Allow br-lan to receive Router Advertisements
+          net.ipv6.conf.br-lan.accept_ra = 2
+          # Disable forwarding to accept RA (forwarding=1 = router mode, won't accept RA)
+          net.ipv6.conf.br-lan.forwarding = 0
+          # Also set default values for any interface
+          net.ipv6.conf.default.accept_ra = 2
+          net.ipv6.conf.default.forwarding = 0
+          EOF
+
       - name: Generate configuration
         working-directory: openwrt
         run: |
