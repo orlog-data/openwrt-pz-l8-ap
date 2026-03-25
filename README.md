@@ -1,13 +1,14 @@
 # OpenWrt Firmware for CMCC PZ-L8
 
-Custom OpenWrt firmware for CMCC PZ-L8 router with two variants: **AP Mode** for access point deployment and **Router Mode** for main router usage.
+Custom OpenWrt firmware for CMCC PZ-L8 router with two variants:
+* **AP Mode** for access point deployment
+* **Router Mode** for main router usage
 
 ## Firmware Variants
 
 | Feature | AP Mode | Router Mode |
 |---------|---------|-------------|
 | **Purpose** | Access Point / Mesh Node | Main Router |
-| **OpenWrt Branch** | main | openwrt-25.12 |
 | **Network Ports** | All bridged (lan1-3, wan) | WAN + LAN separated |
 | **DHCP Server** | ❌ No | ✅ Yes (dnsmasq) |
 | **Firewall** | ❌ No | ✅ Yes (firewall4) |
@@ -66,38 +67,14 @@ Full-featured router firmware with WAN/LAN separation, firewall, and PPPoE suppo
 
 ### Default Network
 
-- **WAN**: lan1 (DHCP or PPPoE client)
+- **WAN**: wan (DHCP or PPPoE client)
 - **LAN**: lan2, lan3, wan bridged as `br-lan`
 - **LAN IP**: 192.168.1.1
 - **DHCP**: Enabled on LAN
 
-### Network Topology
-
-```
- _______________________         _______________________
-|        IPQ5018        |       |        QCA8337        |
-| +------+   +--------+ |       | +--------+   +------+ |
-| | MAC0 |---| GE Phy |-+--MDI--+-|  Phy4  |---| MAC5 | |
-| +------+   +--------+ |       | +--------+   +------+ |
-| +------+   +--------+ |       | +--------+   +------+ |
-| | MAC1 |---| Uniphy |-+-SGMII-+-| SerDes |---| MAC0 | |
-| +------+   +--------+ |       | +--------+   +------+ |
-|_______________________|       |_______________________|
-```
-*PHY-to-PHY CPU link enables 2Gbps bidirectional throughput*
-
----
-
 ## Download
 
 Download from [Releases](https://github.com/orlog-data/openwrt-pz-l8-ap/releases) or [Actions artifacts](https://github.com/orlog-data/openwrt-pz-l8-ap/actions).
-
-| Variant | Filename Pattern |
-|---------|------------------|
-| AP Mode | `openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin` |
-| Router Mode | `openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin` |
-
-> Check the build info or release notes to identify the variant.
 
 ---
 
@@ -190,28 +167,9 @@ apk add luci-i18n-base-zh-cn
   - `/lib/firmware/ath11k/IPQ5018/hw1.0/board-2.bin`
   - `/lib/firmware/ath11k/QCN6122/hw1.0/board-2.bin`
 
-### IPv6 Configuration (AP Mode)
-
-```bash
-# /etc/sysctl.d/99-ipv6-ap.conf
-net.ipv6.conf.br-lan.accept_ra = 2
-net.ipv6.conf.br-lan.forwarding = 0
-```
-
 ---
 
 ## Troubleshooting
-
-### WiFi Not Working
-
-```bash
-# Check if BDF files are present
-ls -la /lib/firmware/ath11k/IPQ5018/hw1.0/
-ls -la /lib/firmware/ath11k/QCN6122/hw1.0/
-
-# Check kernel logs
-dmesg | grep -i ath11k
-```
 
 ### Cannot Access Device (AP Mode)
 
@@ -221,7 +179,7 @@ dmesg | grep -i ath11k
 
 ### Cannot Access Device (Router Mode)
 
-1. Connect to LAN port (lan2, lan3, or wan)
+1. Connect to LAN port
 2. Set computer IP to 192.168.1.x range
 3. Access http://192.168.1.1
 
