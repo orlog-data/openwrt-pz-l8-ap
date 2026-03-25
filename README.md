@@ -80,6 +80,8 @@ Download from [Releases](https://github.com/orlog-data/openwrt-pz-l8-ap/releases
 
 ## Installation
 
+> **Note**: This repository does not provide factory images. You must first flash the official OpenWrt factory firmware following the guide at [PR #20681](https://github.com/openwrt/openwrt/pull/20681), then upgrade to this repository's sysupgrade image.
+
 ### Prerequisites
 
 - Device must already be running OpenWrt
@@ -106,27 +108,11 @@ sysupgrade -n /tmp/openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin
 
 The `-n` flag will not preserve configuration files. Omit it to keep your current settings.
 
-> **Note**: Factory installation from stock firmware requires UART access and is not covered in this guide.
-
 ---
 
 ## WiFi Configuration
 
 WiFi board data files (BDF) extracted from official CMCC firmware 501.11 are included. WiFi should work out of the box.
-
-### Mesh Setup (AP Mode Only)
-
-Configure 802.11s mesh in LuCI or via UCI:
-
-```bash
-uci set wireless.mesh0='wifi-iface'
-uci set wireless.mesh0.device='radio0'
-uci set wireless.mesh0.mode='mesh'
-uci set wireless.mesh0.mesh_id='my-mesh'
-uci set wireless.mesh0.encryption='sae'
-uci set wireless.mesh0.key='your-password'
-uci commit wireless
-```
 
 ---
 
@@ -138,15 +124,22 @@ The firmware comes with English as the default language.
 
 1. Navigate to **System** → **Software**
 2. Click **Update lists**
-3. Search for and install: `luci-i18n-base-zh-cn`
+3. Search for and install the following packages:
+   - `luci-i18n-base-zh-cn`
+   - `luci-i18n-package-manager-zh-cn`
 4. Navigate to **System** → **Language** and select Chinese
 
 ### Via SSH
 
 ```bash
 apk update
-apk add luci-i18n-base-zh-cn
+apk add luci-i18n-base-zh-cn luci-i18n-package-manager-zh-cn
 ```
+
+### Additional Language Packs
+
+- **Router Mode**: Install `luci-i18n-firewall-zh-cn` for firewall interface translation
+- **AP Mode**: Install `luci-i18n-usteer-zh-cn` for usteer roaming interface translation
 
 ---
 
@@ -185,10 +178,22 @@ apk add luci-i18n-base-zh-cn
 
 ### Memory Issues
 
-```bash
-# Reduce log level
-uci set system.@system[0].log_level='4'
+If the device is running low on memory, you can optimize zram swap:
 
+```bash
+# Set zram algorithm to zstd and size to 180MB
+uci set system.@system[0].log_level='4'
+uci set system.zram.compress_algorithm='zstd'
+uci set system.zram.size='180'
+uci commit system
+
+# Restart zram (requires reboot to fully apply)
+reboot
+```
+
+> **Note**: Using zstd compression will consume more CPU resources but provides better compression ratio.
+
+```bash
 # Check memory usage
 free -m
 ```
