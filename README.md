@@ -67,8 +67,8 @@ Full-featured router firmware with WAN/LAN separation, firewall, and PPPoE suppo
 
 ### Default Network
 
-- **WAN**: wan (DHCP or PPPoE client)
-- **LAN**: lan2, lan3, wan bridged as `br-lan`
+- **WAN**: wan port (DHCP or PPPoE client)
+- **LAN**: lan1, lan2, lan3 bridged as `br-lan`
 - **LAN IP**: 192.168.1.1
 - **DHCP**: Enabled on LAN
 
