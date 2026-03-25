@@ -316,11 +316,12 @@ jobs:
           CONFIG_PACKAGE_iwinfo=y
           EOF
 
-          # Run defconfig to normalize and resolve dependencies
+          # Run defconfig twice to normalize and resolve dependencies
+          make defconfig
           make defconfig
 
           # After defconfig, language packages may be reset to =m
-          # Force them back to =y using sed
+          # Force them back to =y using sed (don't run defconfig again!)
           sed -i 's/CONFIG_PACKAGE_luci-i18n-base-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-base-zh-cn=y/' .config
           sed -i 's/CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y/' .config
           sed -i 's/CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y/' .config
@@ -329,9 +330,6 @@ jobs:
           grep -q 'CONFIG_PACKAGE_luci-i18n-base-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-base-zh-cn=y' >> .config
           grep -q 'CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y' >> .config
           grep -q 'CONFIG_PACKAGE_luci-i18n-usteer-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y' >> .config
-
-          # Run olddefconfig to apply without resetting our settings
-          make olddefconfig
 
           # Show final package selections
           echo "=== Final package configuration ==="
