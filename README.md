@@ -170,7 +170,11 @@ apk add luci-i18n-base-zh-cn luci-i18n-package-manager-zh-cn
 2. Set computer IP to 192.168.1.x range
 3. Access http://192.168.1.1
 
-### Reduce Log Level
+### Memory Issues
+
+If you experience frequent crashes or disconnections, the device may be running low on memory. Try the following solutions:
+
+#### Reduce Log Level
 
 Lowering the system log level can save memory:
 
@@ -180,9 +184,9 @@ uci commit system
 /etc/init.d/log restart
 ```
 
-### Optimize Zram
+#### Optimize Zram
 
-If the device is running low on memory, you can increase zram size and use better compression:
+Increase zram size and use better compression:
 
 ```bash
 # Set zram algorithm to zstd and size to 180MB
