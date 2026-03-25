@@ -9,7 +9,7 @@ Custom OpenWrt firmware for CMCC PZ-L8 router, optimized for Access Point (AP) m
 - **Mesh Networking** - 802.11s mesh support with usteer for roaming
 - **IPv6 Support** - Automatic IPv6 address assignment via SLAAC
 - **Low Memory Optimization** - ath11k-smallbuffers driver for 256MB RAM devices
-- **LuCI Web Interface** - Minimal web interface for configuration
+- **LuCI Web Interface** - Minimal web interface with package manager
 
 ## Hardware Specifications
 
@@ -26,26 +26,37 @@ Custom OpenWrt firmware for CMCC PZ-L8 router, optimized for Access Point (AP) m
 
 Download the latest firmware from [Releases](https://github.com/orlog-data/openwrt-pz-l8-ap/releases) or [Actions artifacts](https://github.com/orlog-data/openwrt-pz-l8-ap/actions).
 
+The firmware file is named: `openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin`
+
 ## Installation
 
 ### Prerequisites
 
-- Access to the device's UART console (required for initial installation)
-- TFTP server for firmware transfer
+- Device must already be running OpenWrt (this firmware or another OpenWrt-based firmware)
+- Access to LuCI web interface or SSH
 
-### Steps
+### Via LuCI Web Interface
 
-1. Connect to UART console (115200 baud, 8N1)
-2. Interrupt boot and enter U-Boot
-3. Set up TFTP server with firmware image
-4. Flash firmware via U-Boot commands
+1. Navigate to **System** → **Backup / Flash Firmware**
+2. Under "Flash new firmware image", click **Choose File**
+3. Select the `sysupgrade.bin` file
+4. Click **Upload** and confirm the flash
+5. Wait for the device to reboot (approximately 2-3 minutes)
+
+### Via SSH
 
 ```bash
-# Example U-Boot commands (adjust IP addresses as needed)
-tftpboot 0x44000000 openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-nand-factory.bin
-nand write 0x44000000 0x280000 0x1a80000
-reset
+# Transfer firmware to device
+scp openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin root@192.168.1.1:/tmp/
+
+# Flash firmware
+ssh root@192.168.1.1
+sysupgrade -n /tmp/openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin
 ```
+
+The `-n` flag will not preserve configuration files. Omit it to keep your current settings.
+
+> **Note**: This firmware only provides sysupgrade images. Factory installation from stock firmware requires UART access and is not covered in this guide.
 
 ## Network Configuration
 
@@ -97,37 +108,10 @@ The firmware comes with English as the default language. To install Chinese lang
 ### Via SSH
 
 ```bash
-opkg update
-opkg install luci-i18n-base-zh-cn
-opkg install luci-i18n-package-manager-zh-cn
-opkg install luci-i18n-usteer-zh-cn
-```
-
-## Building from Source
-
-This firmware is built using GitHub Actions. The workflow:
-
-1. Checks out OpenWrt main branch
-2. Applies PR #21495 (PZ-L8 device support + ath11k-smallbuffers)
-3. Downloads WiFi board data files
-4. Configures for AP mode
-5. Builds firmware image
-
-### Local Build
-
-```bash
-# Clone repository
-git clone https://github.com/orlog-data/openwrt-pz-l8-ap.git
-cd openwrt-pz-l8-ap
-
-# Download and apply to OpenWrt
-git clone https://github.com/openwrt/openwrt.git
-cd openwrt
-git fetch origin pull/21495/head:pr-21495
-git merge pr-21495
-
-# Copy workflow config files and build
-# ... see .github/workflows/build.yml for details
+apk update
+apk add luci-i18n-base-zh-cn
+apk add luci-i18n-package-manager-zh-cn
+apk add luci-i18n-usteer-zh-cn
 ```
 
 ## Technical Details
@@ -190,6 +174,6 @@ If device runs out of memory:
 
 ## License
 
-OpenWrt is licensed under various licenses. See individual packages for details.
+This project is licensed under the same terms as OpenWrt. OpenWrt is composed of many components that are licensed under various open source licenses, including GPL-2.0, GPL-2.0+, LGPL-2.1, MIT, ISC, and BSD licenses. See individual packages for specific license information.
 
-The configuration and build scripts in this repository are provided as-is without warranty.
+For more information about OpenWrt licensing, see: https://openwrt.org/docs/guide-developer/license
