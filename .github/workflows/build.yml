@@ -53,7 +53,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: openwrt/openwrt
-          ref: main
+          ref: openwrt-25.12
           path: openwrt
           fetch-depth: 0
 
