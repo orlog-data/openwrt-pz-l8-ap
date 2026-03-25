@@ -289,11 +289,6 @@ jobs:
           CONFIG_PACKAGE_uhttpd-mod-ubus=y
           CONFIG_PACKAGE_luci=m
 
-          # LuCI Chinese language packs
-          CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
-          CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
-          CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y
-
           # Core
           CONFIG_PACKAGE_apk-mbedtls=y
           CONFIG_PACKAGE_base-files=y
@@ -320,20 +315,9 @@ jobs:
           make defconfig
           make defconfig
 
-          # After defconfig, language packages may be reset to =m
-          # Force them back to =y using sed (don't run defconfig again!)
-          sed -i 's/CONFIG_PACKAGE_luci-i18n-base-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-base-zh-cn=y/' .config
-          sed -i 's/CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y/' .config
-          sed -i 's/CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y/' .config
-
-          # Add them if they don't exist
-          grep -q 'CONFIG_PACKAGE_luci-i18n-base-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-base-zh-cn=y' >> .config
-          grep -q 'CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y' >> .config
-          grep -q 'CONFIG_PACKAGE_luci-i18n-usteer-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y' >> .config
-
           # Show final package selections
           echo "=== Final package configuration ==="
-          grep -E 'CONFIG_PACKAGE_(luci-i18n|odhcp|dnsmasq|firewall|ppp)' .config || true
+          grep -E 'CONFIG_PACKAGE_(odhcp|dnsmasq|firewall|ppp)' .config || true
           echo "==================================="
 
       - name: Download sources
