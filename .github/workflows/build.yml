@@ -210,10 +210,7 @@ jobs:
       - name: Generate configuration
         working-directory: openwrt
         run: |
-          # First generate default config for the device
-          make defconfig
-
-          # Now create our custom config
+          # Create our custom config
           cat > .config << 'EOF'
           # Target
           CONFIG_TARGET_qualcommax=y
@@ -277,6 +274,11 @@ jobs:
           CONFIG_PACKAGE_uhttpd-mod-ubus=y
           CONFIG_PACKAGE_luci=m
 
+          # LuCI Chinese language packs
+          CONFIG_PACKAGE_luci-i18n-base-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y
+          CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y
+
           # Core
           CONFIG_PACKAGE_apk-mbedtls=y
           CONFIG_PACKAGE_base-files=y
@@ -299,25 +301,17 @@ jobs:
           CONFIG_PACKAGE_iwinfo=y
           EOF
 
-          # Run defconfig to normalize
+          # Run defconfig to normalize and resolve dependencies
           make defconfig
 
-          # Now FORCE language packages to be included (=y not =m)
-          # These must be set AFTER defconfig to override defaults
-          sed -i 's/CONFIG_PACKAGE_luci-i18n-base-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-base-zh-cn=y/' .config
-          sed -i 's/CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y/' .config
-          sed -i 's/CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y/' .config
+          # After defconfig, language packages may be reset to =m
+          # We need to force them back to =y and run defconfig again
+          ./scripts/config --set-val CONFIG_PACKAGE_luci-i18n-base-zh-cn y
+          ./scripts/config --set-val CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn y
+          ./scripts/config --set-val CONFIG_PACKAGE_luci-i18n-usteer-zh-cn y
 
-          # Add them if they don't exist
-          grep -q 'CONFIG_PACKAGE_luci-i18n-base-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-base-zh-cn=y' >> .config
-          grep -q 'CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y' >> .config
-          grep -q 'CONFIG_PACKAGE_luci-i18n-usteer-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y' >> .config
-
-          # Force DHCP packages to =m (not in image)
-          sed -i 's/CONFIG_PACKAGE_odhcpd-ipv6only=.*/CONFIG_PACKAGE_odhcpd-ipv6only=m/' .config
-          sed -i 's/CONFIG_PACKAGE_odhcp6c=.*/CONFIG_PACKAGE_odhcp6c=m/' .config
-          sed -i 's/CONFIG_PACKAGE_dnsmasq=.*/CONFIG_PACKAGE_dnsmasq=m/' .config
-          sed -i 's/CONFIG_PACKAGE_odhcpd=.*/CONFIG_PACKAGE_odhcpd=m/' .config
+          # Run defconfig again to apply
+          make defconfig
 
           # Show final package selections
           echo "=== Final package configuration ==="
