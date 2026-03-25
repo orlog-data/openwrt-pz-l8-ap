@@ -320,13 +320,18 @@ jobs:
           make defconfig
 
           # After defconfig, language packages may be reset to =m
-          # We need to force them back to =y and run defconfig again
-          ./scripts/config --set-val CONFIG_PACKAGE_luci-i18n-base-zh-cn y
-          ./scripts/config --set-val CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn y
-          ./scripts/config --set-val CONFIG_PACKAGE_luci-i18n-usteer-zh-cn y
+          # Force them back to =y using sed
+          sed -i 's/CONFIG_PACKAGE_luci-i18n-base-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-base-zh-cn=y/' .config
+          sed -i 's/CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y/' .config
+          sed -i 's/CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=.*/CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y/' .config
 
-          # Run defconfig again to apply
-          make defconfig
+          # Add them if they don't exist
+          grep -q 'CONFIG_PACKAGE_luci-i18n-base-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-base-zh-cn=y' >> .config
+          grep -q 'CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-package-manager-zh-cn=y' >> .config
+          grep -q 'CONFIG_PACKAGE_luci-i18n-usteer-zh-cn' .config || echo 'CONFIG_PACKAGE_luci-i18n-usteer-zh-cn=y' >> .config
+
+          # Run olddefconfig to apply without resetting our settings
+          make olddefconfig
 
           # Show final package selections
           echo "=== Final package configuration ==="
