@@ -68,53 +68,43 @@ jobs:
       - name: Download BDF files for PZ-L8 WiFi
         working-directory: openwrt
         run: |
-          # According to ipq-wifi Makefile:
-          # "To add local files for testing:
-          #  1. create a new directory in the ipq-wifi package directory called "files".
-          #  2. place there the needed board files."
+          # BDF (Board Data Files) are required for ath11k WiFi driver
+          # These files contain calibration data specific to this device
+          # Source: firmware_qca-wireless PR #106 (extracted from official 501.11 firmware)
 
-          # Create files directory for local board files
-          mkdir -p package/firmware/ipq-wifi/files
+          # Create directories for board-2.bin files
+          # These will be included in the firmware image via the files/ directory
+          mkdir -p files/lib/firmware/ath11k/IPQ5018/hw1.0
+          mkdir -p files/lib/firmware/ath11k/QCN6122/hw1.0
 
-          # Download BDF files from firmware_qca-wireless PR #106
-          # These files were extracted from official PZ-L8 firmware 501.11
-          # by sqliuchang and encoded using ath11k-bdencoder
-
-          # IPQ5000 (2.4GHz SoC built-in WiFi)
-          # BoardNames: bus=ahb,qmi-chip-id=0,qmi-board-id=255,variant=CMCC-PZ-L8
-          curl -L -o package/firmware/ipq-wifi/files/board-cmcc_pz-l8.ipq5018 \
+          # Download BDF files
+          # IPQ5000 (2.4GHz SoC built-in WiFi) → board-2.bin for IPQ5018
+          curl -L -o files/lib/firmware/ath11k/IPQ5018/hw1.0/board-2.bin \
             "https://github.com/openwrt/firmware_qca-wireless/raw/f7ad5fee1924efdb5d8b2d1bf95bd3867d22e701/board-cmcc_pz-l8.ipq5018"
 
-          # QCN6102 (5GHz external WiFi module)
-          # BoardNames: bus=ahb,qmi-chip-id=0,qmi-board-id=255,variant=CMCC-PZ-L8
-          curl -L -o package/firmware/ipq-wifi/files/board-cmcc_pz-l8.qcn6122 \
+          # QCN6102 (5GHz external WiFi module) → board-2.bin for QCN6122
+          curl -L -o files/lib/firmware/ath11k/QCN6122/hw1.0/board-2.bin \
             "https://github.com/openwrt/firmware_qca-wireless/raw/f7ad5fee1924efdb5d8b2d1bf95bd3867d22e701/board-cmcc_pz-l8.qcn6122"
 
           # Verify downloads
-          echo "Downloaded BDF files:"
-          ls -la package/firmware/ipq-wifi/files/
+          echo "=== Downloaded BDF files ==="
+          ls -la files/lib/firmware/ath11k/IPQ5018/hw1.0/
+          ls -la files/lib/firmware/ath11k/QCN6122/hw1.0/
 
-          # Check file sizes (should be ~131KB each, MD5 from PR #106)
-          SIZE_IPQ=$(stat -c%s "package/firmware/ipq-wifi/files/board-cmcc_pz-l8.ipq5018")
-          SIZE_QCN=$(stat -c%s "package/firmware/ipq-wifi/files/board-cmcc_pz-l8.qcn6122")
+          # Check file sizes (should be ~131KB each)
+          SIZE_IPQ=$(stat -c%s "files/lib/firmware/ath11k/IPQ5018/hw1.0/board-2.bin")
+          SIZE_QCN=$(stat -c%s "files/lib/firmware/ath11k/QCN6122/hw1.0/board-2.bin")
 
           echo "IPQ5018 BDF size: $SIZE_IPQ bytes (expected: 131176)"
           echo "QCN6122 BDF size: $SIZE_QCN bytes (expected: 131176)"
-
-          # Verify MD5 checksums
-          MD5_IPQ=$(md5sum "package/firmware/ipq-wifi/files/board-cmcc_pz-l8.ipq5018" | cut -d' ' -f1)
-          MD5_QCN=$(md5sum "package/firmware/ipq-wifi/files/board-cmcc_pz-l8.qcn6122" | cut -d' ' -f1)
-
-          echo "IPQ5018 MD5: $MD5_IPQ (expected: 95bc22178d4a3a3c63a5b258f3849c84)"
-          echo "QCN6122 MD5: $MD5_QCN (expected: e7f17e4b791a83ca919f6954ce16a350)"
 
           if [ "$SIZE_IPQ" -lt 100000 ] || [ "$SIZE_QCN" -lt 100000 ]; then
             echo "ERROR: BDF files appear to be incomplete or corrupted"
             exit 1
           fi
 
-          echo "BDF files downloaded and verified successfully!"
-          echo "Files will be installed to /lib/firmware/ath11k/IPQ5018/hw1.0/board-2.bin"
+          echo "BDF files downloaded successfully!"
+          echo "These will be installed directly to /lib/firmware/ath11k/ in the image"
 
       - name: Cache ccache
         uses: actions/cache@v4
@@ -144,21 +134,6 @@ jobs:
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-
-      - name: Clean ipq-wifi package to force rebuild with BDF files
-        working-directory: openwrt
-        run: |
-          # Clean the ipq-wifi package to ensure it's rebuilt with our BDF files
-          make package/firmware/ipq-wifi/clean V=s || true
-
-          # Verify BDF files are in place
-          echo "=== Checking BDF files in ipq-wifi package ==="
-          ls -la package/firmware/ipq-wifi/files/ || echo "No files directory"
-          echo "=============================================="
-
-          # Also clean any cached ipk packages
-          rm -rf bin/packages/aarch64_cortex-a53/base/ipq-wifi-cmcc_pz-l8* || true
-          rm -rf bin/targets/qualcommax/ipq50xx/packages/ipq-wifi-cmcc_pz-l8* || true
 
       - name: Create custom files for AP mode
         working-directory: openwrt
@@ -286,7 +261,8 @@ jobs:
           CONFIG_PACKAGE_kmod-ath11k-ahb=y
           CONFIG_PACKAGE_kmod-ath11k-smallbuffers=y
           CONFIG_PACKAGE_ath11k-firmware-ipq5018-qcn6122=y
-          CONFIG_PACKAGE_ipq-wifi-cmcc_pz-l8=y
+          # BDF files are included directly via files/ directory, not via ipq-wifi package
+          CONFIG_PACKAGE_ipq-wifi-cmcc_pz-l8=m
           CONFIG_PACKAGE_wpad-mesh-mbedtls=y
 
           # Mesh
@@ -359,35 +335,13 @@ jobs:
       - name: Show ccache stats
         run: ccache -s
 
-      - name: Verify ipq-wifi package built with BDF files
+      - name: Verify BDF files are in place
         working-directory: openwrt
         run: |
-          echo "=== Checking if ipq-wifi-cmcc_pz-l8 was built ==="
-          find bin -name "ipq-wifi-cmcc_pz-l8*" -type f -ls 2>/dev/null || echo "WARNING: ipq-wifi-cmcc_pz-l8 package not found!"
-
-          echo ""
-          echo "=== Checking package contents ==="
-          # OpenWrt now uses .apk format (like Alpine Linux)
-          PKG_FILE=$(find bin -name "ipq-wifi-cmcc_pz-l8*.apk" 2>/dev/null | head -1)
-          if [ -n "$PKG_FILE" ]; then
-            echo "Found package: $PKG_FILE"
-            echo "Package size: $(ls -lh "$PKG_FILE" | awk '{print $5}')"
-
-            # Extract .apk and check contents
-            TEMP_DIR=$(mktemp -d)
-            tar -xzf "$PKG_FILE" -C "$TEMP_DIR" 2>/dev/null || true
-            echo ""
-            echo "=== BDF files in package ==="
-            find "$TEMP_DIR" -name "*.bin" -o -name "board*" 2>/dev/null | head -20 || echo "No board files found in package!"
-            echo ""
-            echo "=== Full package file list ==="
-            find "$TEMP_DIR" -type f 2>/dev/null | head -30 || true
-            rm -rf "$TEMP_DIR"
-          else
-            echo "ERROR: ipq-wifi-cmcc_pz-l8 package not built!"
-            exit 1
-          fi
-          echo "=============================================="
+          echo "=== Verifying BDF files in files/ directory ==="
+          ls -la files/lib/firmware/ath11k/IPQ5018/hw1.0/
+          ls -la files/lib/firmware/ath11k/QCN6122/hw1.0/
+          echo "==============================================="
 
       - name: Prepare artifacts
         run: |
