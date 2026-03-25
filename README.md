@@ -110,12 +110,6 @@ The `-n` flag will not preserve configuration files. Omit it to keep your curren
 
 ---
 
-## WiFi Configuration
-
-WiFi board data files (BDF) extracted from official CMCC firmware 501.11 are included. WiFi should work out of the box.
-
----
-
 ## Installing Language Packs
 
 The firmware comes with English as the default language.
@@ -176,22 +170,29 @@ apk add luci-i18n-base-zh-cn luci-i18n-package-manager-zh-cn
 2. Set computer IP to 192.168.1.x range
 3. Access http://192.168.1.1
 
-### Memory Issues
+### Reduce Log Level
 
-If the device is running low on memory, you can optimize zram swap:
+Lowering the system log level can save memory:
+
+```bash
+uci set system.@system[0].log_level='4'
+uci commit system
+/etc/init.d/log restart
+```
+
+### Optimize Zram
+
+If the device is running low on memory, you can increase zram size and use better compression:
 
 ```bash
 # Set zram algorithm to zstd and size to 180MB
-uci set system.@system[0].log_level='4'
 uci set system.zram.compress_algorithm='zstd'
 uci set system.zram.size='180'
 uci commit system
-
-# Restart zram (requires reboot to fully apply)
 reboot
 ```
 
-> **Note**: Using zstd compression will consume more CPU resources but provides better compression ratio.
+> **Note**: zstd compression provides better ratio but consumes more CPU.
 
 ```bash
 # Check memory usage
