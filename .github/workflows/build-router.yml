@@ -1,0 +1,282 @@
+# GitHub Actions workflow for building OpenWrt firmware for CMCC PZ-L8
+# Target: Router mode with full routing features
+# Features: Dual PR merge (PZ-L8 support + PHY-to-PHY CPU link), WiFi BDF from PR #106
+
+name: Build OpenWrt for CMCC PZ-L8 (Router Mode)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag (leave empty for no release)'
+        required: false
+        default: ''
+
+env:
+  TARGET: qualcommax
+  SUBTARGET: ipq50xx
+  DEVICE: cmcc_pz-l8
+
+jobs:
+  build:
+    name: Build Firmware
+    runs-on: ubuntu-22.04
+    timeout-minutes: 720
+
+    steps:
+      - name: Maximize build space
+        uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 2048
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang flex bison g++ gawk \
+            gcc-multilib g++-multilib gettext git \
+            libncurses-dev libssl-dev python3-distutils \
+            python3-setuptools python3-dev rsync swig unzip \
+            zlib1g-dev file wget curl jq device-tree-compiler \
+            ccache libelf-dev libdw-dev libiberty-dev
+
+      - name: Checkout OpenWrt
+        uses: actions/checkout@v4
+        with:
+          repository: openwrt/openwrt
+          ref: openwrt-25.12
+          path: openwrt
+          fetch-depth: 0
+
+      - name: Fetch PR #21495 (PZ-L8 device support + ath11k-smallbuffers)
+        working-directory: openwrt
+        run: |
+          git fetch origin pull/21495/head:pr-21495
+          git config user.email "builder@github.com"
+          git config user.name "GitHub Actions"
+          git merge pr-21495 --no-edit || git merge pr-21495 --allow-unrelated-histories --no-edit || true
+
+      - name: Fetch PR #21496 (PHY-to-PHY CPU link for 2Gbps)
+        working-directory: openwrt
+        run: |
+          git fetch origin pull/21496/head:pr-21496
+          git merge pr-21496 --no-edit || git merge pr-21496 --allow-unrelated-histories --no-edit || true
+
+      - name: Download BDF files for PZ-L8 WiFi
+        working-directory: openwrt
+        run: |
+          # BDF (Board Data Files) are required for ath11k WiFi driver
+          # Source: firmware_qca-wireless PR #106 (extracted from official 501.11 firmware)
+
+          mkdir -p files/lib/firmware/ath11k/IPQ5018/hw1.0
+          mkdir -p files/lib/firmware/ath11k/QCN6122/hw1.0
+
+          # IPQ5000 (2.4GHz SoC built-in WiFi)
+          curl -L -o files/lib/firmware/ath11k/IPQ5018/hw1.0/board-2.bin \
+            "https://github.com/openwrt/firmware_qca-wireless/raw/f7ad5fee1924efdb5d8b2d1bf95bd3867d22e701/board-cmcc_pz-l8.ipq5018"
+
+          # QCN6102 (5GHz external WiFi module)
+          curl -L -o files/lib/firmware/ath11k/QCN6122/hw1.0/board-2.bin \
+            "https://github.com/openwrt/firmware_qca-wireless/raw/f7ad5fee1924efdb5d8b2d1bf95bd3867d22e701/board-cmcc_pz-l8.qcn6122"
+
+          echo "=== Downloaded BDF files ==="
+          ls -la files/lib/firmware/ath11k/IPQ5018/hw1.0/
+          ls -la files/lib/firmware/ath11k/QCN6122/hw1.0/
+
+          SIZE_IPQ=$(stat -c%s "files/lib/firmware/ath11k/IPQ5018/hw1.0/board-2.bin")
+          SIZE_QCN=$(stat -c%s "files/lib/firmware/ath11k/QCN6122/hw1.0/board-2.bin")
+
+          if [ "$SIZE_IPQ" -lt 100000 ] || [ "$SIZE_QCN" -lt 100000 ]; then
+            echo "ERROR: BDF files appear to be incomplete"
+            exit 1
+          fi
+
+          echo "BDF files downloaded successfully!"
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-${{ env.TARGET }}-router-${{ hashFiles('openwrt/feeds.conf.default') }}
+          restore-keys: ccache-${{ env.TARGET }}-
+
+      - name: Cache toolchain
+        uses: actions/cache@v4
+        with:
+          path: openwrt/staging_dir
+          key: toolchain-${{ env.TARGET }}-router-${{ hashFiles('openwrt/include/version.mk') }}
+          restore-keys: toolchain-${{ env.TARGET }}-
+
+      - name: Configure ccache
+        run: |
+          ccache --set-config=cache_dir=~/.ccache
+          ccache --set-config=max_size=10G
+          ccache --set-config=compression=true
+          ccache -z
+
+      - name: Update feeds
+        working-directory: openwrt
+        run: |
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: Generate configuration
+        working-directory: openwrt
+        run: |
+          cat > .config << 'EOF'
+          # Target
+          CONFIG_TARGET_qualcommax=y
+          CONFIG_TARGET_qualcommax_ipq50xx=y
+          CONFIG_TARGET_qualcommax_ipq50xx_DEVICE_cmcc_pz-l8=y
+
+          # Build
+          CONFIG_DEVEL=y
+          CONFIG_CCACHE=y
+          CONFIG_USE_CCACHE=y
+          CONFIG_ALL_KMODS=y
+          CONFIG_ALL_NONSHARED=y
+
+          # Image
+          CONFIG_TARGET_ROOTFS_SQUASHFS=y
+          CONFIG_TARGET_IMAGES_GZIP=y
+          CONFIG_INCLUDE_CONFIG=y
+
+          # Kernel
+          CONFIG_KERNEL_CRASHLOG=y
+          CONFIG_KERNEL_SWAP=y
+          CONFIG_KERNEL_DEBUG_FS=y
+
+          # mbedtls
+          CONFIG_PACKAGE_libustream-mbedtls=y
+
+          # WiFi
+          CONFIG_PACKAGE_kmod-ath11k-ahb=y
+          CONFIG_PACKAGE_kmod-ath11k-smallbuffers=y
+          CONFIG_PACKAGE_ath11k-firmware-ipq5018-qcn6122=y
+          CONFIG_PACKAGE_ipq-wifi-cmcc_pz-l8=m
+          CONFIG_PACKAGE_wpad-basic-mbedtls=y
+
+          # LuCI
+          CONFIG_PACKAGE_luci=y
+
+          # Router packages (from user list)
+          CONFIG_PACKAGE_apk-mbedtls=y
+          CONFIG_PACKAGE_base-files=y
+          CONFIG_PACKAGE_ca-bundle=y
+          CONFIG_PACKAGE_dnsmasq=y
+          CONFIG_PACKAGE_dropbear=y
+          CONFIG_PACKAGE_firewall4=y
+          CONFIG_PACKAGE_fstools=y
+          CONFIG_PACKAGE_kmod-ath11k-ahb=y
+          CONFIG_PACKAGE_kmod-gpio-button-hotplug=y
+          CONFIG_PACKAGE_kmod-leds-gpio=y
+          CONFIG_PACKAGE_kmod-nft-offload=y
+          CONFIG_PACKAGE_kmod-qca-nss-dp=y
+          CONFIG_PACKAGE_libustream-mbedtls=y
+          CONFIG_PACKAGE_logd=y
+          CONFIG_PACKAGE_mtd=y
+          CONFIG_PACKAGE_netifd=y
+          CONFIG_PACKAGE_nftables=y
+          CONFIG_PACKAGE_odhcp6c=y
+          CONFIG_PACKAGE_odhcpd-ipv6only=y
+          CONFIG_PACKAGE_ppp=y
+          CONFIG_PACKAGE_ppp-mod-pppoe=y
+          CONFIG_PACKAGE_procd-ujail=y
+          CONFIG_PACKAGE_uboot-envtools=y
+          CONFIG_PACKAGE_uci=y
+          CONFIG_PACKAGE_uclient-fetch=y
+          CONFIG_PACKAGE_urandom-seed=y
+          CONFIG_PACKAGE_urngd=y
+          CONFIG_PACKAGE_zram-swap=y
+          CONFIG_PACKAGE_iw=y
+          CONFIG_PACKAGE_iwinfo=y
+          EOF
+
+          # Run defconfig to normalize
+          make defconfig
+          make defconfig
+
+      - name: Download sources
+        working-directory: openwrt
+        run: make download -j$(nproc)
+
+      - name: Build
+        working-directory: openwrt
+        run: make -j$(nproc) V=w || make -j1 V=s
+
+      - name: Show ccache stats
+        run: ccache -s
+
+      - name: Verify BDF files are in place
+        working-directory: openwrt
+        run: |
+          echo "=== Verifying BDF files ==="
+          ls -la files/lib/firmware/ath11k/IPQ5018/hw1.0/
+          ls -la files/lib/firmware/ath11k/QCN6122/hw1.0/
+          echo "==========================="
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p release
+          find openwrt/bin/targets -name "*.bin" -exec cp {} release/ \;
+          find openwrt/bin/targets -name "*.img.gz" -exec cp {} release/ \;
+          cd release && sha256sum * > sha256sums
+
+          cat > BUILD_INFO.txt << EOF
+          Build: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          Target: ${{ env.TARGET }}/${{ env.SUBTARGET }}
+          Device: ${{ env.DEVICE }}
+          Mode: Router (Full Features)
+          PRs: #21495 (ath11k-smallbuffers) + #21496 (PHY-to-PHY 2Gbps)
+          BDF: firmware_qca-wireless PR #106
+
+          Network Configuration:
+          - WAN port for PPPoE/DHCP
+          - LAN ports bridged
+          - Full routing with firewall
+
+          WiFi:
+          - 2.4GHz: IPQ5000 (SoC built-in)
+          - 5GHz: QCN6102
+          - Driver: ath11k-smallbuffers
+          EOF
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-${{ env.DEVICE }}-router-${{ github.run_number }}
+          path: release/
+          retention-days: 30
+
+      - name: Create release
+        if: inputs.release_tag != ''
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: release/*
+          body: |
+            OpenWrt Firmware for CMCC PZ-L8 (Router Mode)
+
+            ## Features
+            - Full Router Mode with firewall
+            - PPPoE/DHCP WAN support
+            - IPv6 support (odhcp6c + odhcpd-ipv6only)
+            - ath11k-smallbuffers for low-RAM optimization
+            - PHY-to-PHY CPU link for 2Gbps throughput (PR #21496)
+            - WiFi BDF from official firmware 501.11
+
+            ## Network Configuration
+            - WAN: PPPoE or DHCP client
+            - LAN: Bridged ports with DHCP server
+
+            ## WiFi
+            - 2.4GHz: IPQ5000 (SoC built-in)
+            - 5GHz: QCN6102
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
