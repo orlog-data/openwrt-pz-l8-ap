@@ -1,15 +1,22 @@
-# OpenWrt Firmware for CMCC PZ-L8 (AP Mode)
+# OpenWrt Firmware for CMCC PZ-L8
 
-Custom OpenWrt firmware for CMCC PZ-L8 router, optimized for Access Point (AP) mode with mesh networking support.
+Custom OpenWrt firmware for CMCC PZ-L8 router with two variants: **AP Mode** for access point deployment and **Router Mode** for main router usage.
 
-## Features
+## Firmware Variants
 
-- **AP Mode Only** - All Ethernet ports (lan1, lan2, lan3, wan) bridged together
-- **WiFi Support** - Dual-band: 2.4GHz (IPQ5000) + 5GHz (QCN6102)
-- **Mesh Networking** - 802.11s mesh support with usteer for roaming
-- **IPv6 Support** - Automatic IPv6 address assignment via SLAAC
-- **Low Memory Optimization** - ath11k-smallbuffers driver for 256MB RAM devices
-- **LuCI Web Interface** - Minimal web interface with package manager
+| Feature | AP Mode | Router Mode |
+|---------|---------|-------------|
+| **Purpose** | Access Point / Mesh Node | Main Router |
+| **OpenWrt Branch** | main | openwrt-25.12 |
+| **Network Ports** | All bridged (lan1-3, wan) | WAN + LAN separated |
+| **DHCP Server** | ❌ No | ✅ Yes (dnsmasq) |
+| **Firewall** | ❌ No | ✅ Yes (firewall4) |
+| **PPPoE Support** | ❌ No | ✅ Yes |
+| **IPv6** | SLAAC client | Full (odhcp6c + odhcpd) |
+| **Mesh (802.11s)** | ✅ Yes + usteer | ❌ No |
+| **PHY-to-PHY 2Gbps** | ❌ No | ✅ Yes (PR #21496) |
+| **LuCI** | Minimal | Full |
+| **RAM Optimization** | ath11k-smallbuffers | ath11k-smallbuffers |
 
 ## Hardware Specifications
 
@@ -22,17 +29,83 @@ Custom OpenWrt firmware for CMCC PZ-L8 router, optimized for Access Point (AP) m
 | WiFi 5GHz | QCN6102 |
 | Ethernet | 4x Gigabit (lan1, lan2, lan3, wan) |
 
+---
+
+## AP Mode
+
+Optimized for access point deployment. All Ethernet ports are bridged together, acting as a transparent AP. Ideal for extending existing network coverage or building mesh networks.
+
+### Features
+
+- **All Ports Bridged** - lan1, lan2, lan3, wan bridged as `br-lan`
+- **Mesh Networking** - 802.11s mesh support with usteer for seamless roaming
+- **IPv6 Support** - Automatic IPv6 address via SLAAC
+- **Low Memory Optimization** - ath11k-smallbuffers driver for 256MB RAM
+- **Minimal Footprint** - No firewall, DHCP, or routing overhead
+
+### Default Network
+
+- **IPv4**: DHCP client (automatic IP from main router)
+- **IPv4 Fallback**: 192.168.10.1 (if DHCP fails)
+- **IPv6**: Automatic via SLAAC
+- **Access**: http://[device-ip] or http://192.168.10.1
+
+---
+
+## Router Mode
+
+Full-featured router firmware with WAN/LAN separation, firewall, and PPPoE support. Includes PHY-to-PHY CPU link patch for 2Gbps throughput.
+
+### Features
+
+- **Full Router Functions** - NAT, firewall, DHCP server
+- **PPPoE Support** - Direct ISP connection
+- **IPv6 Full Support** - DHCPv6-PD, RA, NAT66
+- **2Gbps Throughput** - PHY-to-PHY CPU link (PR #21496)
+- **Complete LuCI** - Full web management interface
+
+### Default Network
+
+- **WAN**: lan1 (DHCP or PPPoE client)
+- **LAN**: lan2, lan3, wan bridged as `br-lan`
+- **LAN IP**: 192.168.1.1
+- **DHCP**: Enabled on LAN
+
+### Network Topology
+
+```
+ _______________________         _______________________
+|        IPQ5018        |       |        QCA8337        |
+| +------+   +--------+ |       | +--------+   +------+ |
+| | MAC0 |---| GE Phy |-+--MDI--+-|  Phy4  |---| MAC5 | |
+| +------+   +--------+ |       | +--------+   +------+ |
+| +------+   +--------+ |       | +--------+   +------+ |
+| | MAC1 |---| Uniphy |-+-SGMII-+-| SerDes |---| MAC0 | |
+| +------+   +--------+ |       | +--------+   +------+ |
+|_______________________|       |_______________________|
+```
+*PHY-to-PHY CPU link enables 2Gbps bidirectional throughput*
+
+---
+
 ## Download
 
-Download the latest firmware from [Releases](https://github.com/orlog-data/openwrt-pz-l8-ap/releases) or [Actions artifacts](https://github.com/orlog-data/openwrt-pz-l8-ap/actions).
+Download from [Releases](https://github.com/orlog-data/openwrt-pz-l8-ap/releases) or [Actions artifacts](https://github.com/orlog-data/openwrt-pz-l8-ap/actions).
 
-The firmware file is named: `openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin`
+| Variant | Filename Pattern |
+|---------|------------------|
+| AP Mode | `openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin` |
+| Router Mode | `openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin` |
+
+> Check the build info or release notes to identify the variant.
+
+---
 
 ## Installation
 
 ### Prerequisites
 
-- Device must already be running OpenWrt (this firmware or another OpenWrt-based firmware)
+- Device must already be running OpenWrt
 - Access to LuCI web interface or SSH
 
 ### Via LuCI Web Interface
@@ -56,32 +129,19 @@ sysupgrade -n /tmp/openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin
 
 The `-n` flag will not preserve configuration files. Omit it to keep your current settings.
 
-> **Note**: This firmware only provides sysupgrade images. Factory installation from stock firmware requires UART access and is not covered in this guide.
+> **Note**: Factory installation from stock firmware requires UART access and is not covered in this guide.
 
-## Network Configuration
-
-### Default Settings
-
-- All Ethernet ports bridged as `br-lan`
-- IPv4: DHCP client (automatic IP from main router)
-- IPv4 Fallback: 192.168.10.1 (if DHCP fails)
-- IPv6: Automatic via SLAAC
-
-### Access the Device
-
-- **LuCI Web Interface**: http://[device-ip] or http://192.168.10.1
-- **SSH**: `ssh root@[device-ip]`
+---
 
 ## WiFi Configuration
 
-The firmware includes WiFi board data files (BDF) extracted from official CMCC firmware 501.11. WiFi should work out of the box after installation.
+WiFi board data files (BDF) extracted from official CMCC firmware 501.11 are included. WiFi should work out of the box.
 
-### Mesh Setup
+### Mesh Setup (AP Mode Only)
 
-For mesh networking, configure 802.11s interface in LuCI or via UCI:
+Configure 802.11s mesh in LuCI or via UCI:
 
 ```bash
-# Example mesh configuration
 uci set wireless.mesh0='wifi-iface'
 uci set wireless.mesh0.device='radio0'
 uci set wireless.mesh0.mode='mesh'
@@ -91,18 +151,17 @@ uci set wireless.mesh0.key='your-password'
 uci commit wireless
 ```
 
+---
+
 ## Installing Language Packs
 
-The firmware comes with English as the default language. To install Chinese language support:
+The firmware comes with English as the default language.
 
-### Via LuCI Web Interface
+### Via LuCI
 
 1. Navigate to **System** → **Software**
 2. Click **Update lists**
-3. Search for and install:
-   - `luci-i18n-base-zh-cn`
-   - `luci-i18n-package-manager-zh-cn`
-   - `luci-i18n-usteer-zh-cn`
+3. Search for and install: `luci-i18n-base-zh-cn`
 4. Navigate to **System** → **Language** and select Chinese
 
 ### Via SSH
@@ -110,11 +169,18 @@ The firmware comes with English as the default language. To install Chinese lang
 ```bash
 apk update
 apk add luci-i18n-base-zh-cn
-apk add luci-i18n-package-manager-zh-cn
-apk add luci-i18n-usteer-zh-cn
 ```
 
+---
+
 ## Technical Details
+
+### Patches Applied
+
+| Patch | AP Mode | Router Mode | Description |
+|-------|---------|-------------|-------------|
+| [PR #21495](https://github.com/openwrt/openwrt/pull/21495) | ✅ | ✅ | Device support + ath11k-smallbuffers |
+| [PR #21496](https://github.com/openwrt/openwrt/pull/21496) | ❌ | ✅ | PHY-to-PHY CPU link for 2Gbps |
 
 ### WiFi Board Data Files
 
@@ -124,11 +190,7 @@ apk add luci-i18n-usteer-zh-cn
   - `/lib/firmware/ath11k/IPQ5018/hw1.0/board-2.bin`
   - `/lib/firmware/ath11k/QCN6122/hw1.0/board-2.bin`
 
-### Patches Applied
-
-- [PR #21495](https://github.com/openwrt/openwrt/pull/21495) - Device support for CMCC PZ-L8 with ath11k-smallbuffers
-
-### IPv6 Configuration
+### IPv6 Configuration (AP Mode)
 
 ```bash
 # /etc/sysctl.d/99-ipv6-ap.conf
@@ -136,40 +198,50 @@ net.ipv6.conf.br-lan.accept_ra = 2
 net.ipv6.conf.br-lan.forwarding = 0
 ```
 
-This allows the AP to receive IPv6 Router Advertisements and obtain global IPv6 addresses via SLAAC.
+---
 
 ## Troubleshooting
 
 ### WiFi Not Working
 
-1. Check if BDF files are present:
-   ```bash
-   ls -la /lib/firmware/ath11k/IPQ5018/hw1.0/
-   ls -la /lib/firmware/ath11k/QCN6122/hw1.0/
-   ```
+```bash
+# Check if BDF files are present
+ls -la /lib/firmware/ath11k/IPQ5018/hw1.0/
+ls -la /lib/firmware/ath11k/QCN6122/hw1.0/
 
-2. Check kernel logs:
-   ```bash
-   dmesg | grep -i ath11k
-   ```
+# Check kernel logs
+dmesg | grep -i ath11k
+```
 
-### Cannot Access Device
+### Cannot Access Device (AP Mode)
 
 1. Check if device obtained IP via DHCP
 2. Try fallback IP: 192.168.10.1 (connect directly with static IP in 192.168.10.x range)
-3. Check if device has IPv6 address: `ip -6 addr show br-lan`
+3. Check IPv6 address: `ip -6 addr show br-lan`
+
+### Cannot Access Device (Router Mode)
+
+1. Connect to LAN port (lan2, lan3, or wan)
+2. Set computer IP to 192.168.1.x range
+3. Access http://192.168.1.1
 
 ### Memory Issues
 
-If device runs out of memory:
-- Reduce log level: `uci set system.@system[0].log_level='4'`
-- Disable unnecessary services
-- Use swap: the firmware includes zram-swap
+```bash
+# Reduce log level
+uci set system.@system[0].log_level='4'
+
+# Check memory usage
+free -m
+```
+
+---
 
 ## Credits
 
 - OpenWrt Project - https://openwrt.org
-- PR #21495 contributors - Device support
+- PR #21495 contributors - Device support + ath11k-smallbuffers
+- PR #21496 contributors - PHY-to-PHY CPU link
 - BDF files from firmware_qca-wireless PR #106 by sqliuchang
 
 ## License
