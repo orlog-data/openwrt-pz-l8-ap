@@ -47,10 +47,10 @@ The firmware file is named: `openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysu
 
 ```bash
 # Transfer firmware to device
-scp openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin root@192.168.1.1:/tmp/
+scp openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin root@[device-ip]:/tmp/
 
 # Flash firmware
-ssh root@192.168.1.1
+ssh root@[device-ip]
 sysupgrade -n /tmp/openwrt-qualcommax-ipq50xx-cmcc_pz-l8-squashfs-sysupgrade.bin
 ```
 
@@ -64,12 +64,12 @@ The `-n` flag will not preserve configuration files. Omit it to keep your curren
 
 - All Ethernet ports bridged as `br-lan`
 - IPv4: DHCP client (automatic IP from main router)
-- IPv4 Fallback: 192.168.1.1 (if DHCP fails)
+- IPv4 Fallback: 192.168.10.1 (if DHCP fails)
 - IPv6: Automatic via SLAAC
 
 ### Access the Device
 
-- **LuCI Web Interface**: http://[device-ip] or http://192.168.1.1
+- **LuCI Web Interface**: http://[device-ip] or http://192.168.10.1
 - **SSH**: `ssh root@[device-ip]`
 
 ## WiFi Configuration
@@ -156,7 +156,7 @@ This allows the AP to receive IPv6 Router Advertisements and obtain global IPv6 
 ### Cannot Access Device
 
 1. Check if device obtained IP via DHCP
-2. Try fallback IP: 192.168.1.1 (connect directly with static IP in 192.168.1.x range)
+2. Try fallback IP: 192.168.10.1 (connect directly with static IP in 192.168.10.x range)
 3. Check if device has IPv6 address: `ip -6 addr show br-lan`
 
 ### Memory Issues

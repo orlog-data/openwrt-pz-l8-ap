@@ -144,7 +144,7 @@ jobs:
 
           # Network configuration for AP mode
           # All ports (lan1, lan2, lan3, wan) bridged together
-          # DHCP client with static fallback on 192.168.1.1
+          # DHCP client with static fallback on 192.168.10.1
           cat > files/etc/config/network << 'EOF'
           config interface 'loopback'
               option device 'lo'
@@ -167,7 +167,7 @@ jobs:
           config interface 'lan_static'
               option device 'br-lan'
               option proto 'static'
-              option ipaddr '192.168.1.1'
+              option ipaddr '192.168.10.1'
               option netmask '255.255.255.0'
           EOF
 
@@ -198,7 +198,7 @@ jobs:
           set network.lan_static='interface'
           set network.lan_static.device='br-lan'
           set network.lan_static.proto='static'
-          set network.lan_static.ipaddr='192.168.1.1'
+          set network.lan_static.ipaddr='192.168.10.1'
           set network.lan_static.netmask='255.255.255.0'
           UCI
 
@@ -358,7 +358,7 @@ jobs:
           Network Configuration:
           - All ports (lan1, lan2, lan3, wan) bridged to br-lan
           - DHCP client enabled
-          - Static fallback: 192.168.1.1
+          - Static fallback: 192.168.10.1
 
           WiFi:
           - 2.4GHz: IPQ5000 (SoC built-in)
@@ -392,7 +392,7 @@ jobs:
             ## Network Configuration
             - All ports (lan1, lan2, lan3, wan) bridged together
             - DHCP client enabled
-            - Static fallback IP: 192.168.1.1
+            - Static fallback IP: 192.168.10.1
 
             ## WiFi
             - 2.4GHz: IPQ5000 (SoC built-in)
