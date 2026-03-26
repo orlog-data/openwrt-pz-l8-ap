@@ -196,7 +196,7 @@ uci commit system
 reboot
 ```
 
-> **Note**: zstd compression provides better compression ratio than default lzo, but consumes more CPU. The firmware includes `kmod-lib-zstd` module to support this.
+> **Note**: ZSTD compression is built into the kernel (not a separate module), so no additional package installation is needed. zstd provides better compression ratio than default lzo, but consumes more CPU.
 
 ```bash
 # Check memory usage
