@@ -110,15 +110,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ env.TARGET }}-v3-${{ hashFiles('openwrt/feeds.conf.default') }}
-          restore-keys: ccache-${{ env.TARGET }}-
+          key: ccache-${{ env.TARGET }}-v4-${{ github.ref_name }}-${{ hashFiles('openwrt/feeds.conf.default') }}
+          restore-keys: |
+            ccache-${{ env.TARGET }}-v4-${{ github.ref_name }}-
+            ccache-${{ env.TARGET }}-v4-
 
       - name: Cache toolchain
         uses: actions/cache@v4
         with:
           path: openwrt/staging_dir
-          key: toolchain-${{ env.TARGET }}-v3-${{ hashFiles('openwrt/include/version.mk') }}
-          restore-keys: toolchain-${{ env.TARGET }}-
+          key: toolchain-${{ env.TARGET }}-v4-${{ hashFiles('openwrt/include/version.mk') }}
+          restore-keys: toolchain-${{ env.TARGET }}-v4-
 
       # Do NOT cache build_dir to ensure ipq-wifi is rebuilt with BDF files
 

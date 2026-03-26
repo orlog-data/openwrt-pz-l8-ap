@@ -103,15 +103,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ env.TARGET }}-router-${{ hashFiles('openwrt/feeds.conf.default') }}
-          restore-keys: ccache-${{ env.TARGET }}-
+          key: ccache-${{ env.TARGET }}-router-v4-${{ hashFiles('openwrt/feeds.conf.default') }}
+          restore-keys: |
+            ccache-${{ env.TARGET }}-router-v4-
+            ccache-${{ env.TARGET }}-v4-
 
       - name: Cache toolchain
         uses: actions/cache@v4
         with:
           path: openwrt/staging_dir
-          key: toolchain-${{ env.TARGET }}-router-${{ hashFiles('openwrt/include/version.mk') }}
-          restore-keys: toolchain-${{ env.TARGET }}-
+          key: toolchain-${{ env.TARGET }}-router-v4-${{ hashFiles('openwrt/include/version.mk') }}
+          restore-keys: |
+            toolchain-${{ env.TARGET }}-router-v4-
+            toolchain-${{ env.TARGET }}-v4-
 
       - name: Configure ccache
         run: |
