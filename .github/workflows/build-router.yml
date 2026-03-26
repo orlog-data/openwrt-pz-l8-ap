@@ -208,7 +208,21 @@ jobs:
 
       - name: Download sources
         working-directory: openwrt
-        run: make download -j$(nproc)
+        run: |
+          # Retry download up to 3 times with increasing delay
+          for i in 1 2 3; do
+            echo "Download attempt $i/3..."
+            if make download -j$(nproc) V=s; then
+              echo "Download successful!"
+              break
+            fi
+            if [ $i -eq 3 ]; then
+              echo "All download attempts failed!"
+              exit 1
+            fi
+            echo "Download failed, waiting 30s before retry..."
+            sleep 30
+          done
 
       - name: Build
         working-directory: openwrt
