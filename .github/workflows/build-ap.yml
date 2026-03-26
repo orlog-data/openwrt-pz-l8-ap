@@ -1,6 +1,6 @@
 # GitHub Actions workflow for building OpenWrt firmware for CMCC PZ-L8
-# Target: AP mode only with mesh support
-# Features: Optimized caching for faster builds, WiFi BDF from firmware_qca-wireless PR #106
+# Target: AP mode - access point deployment
+# Based on openwrt-25.12 branch with manual patches
 
 name: Build OpenWrt for CMCC PZ-L8 (AP Mode)
 
@@ -11,9 +11,6 @@ on:
         description: 'Release tag (leave empty for no release)'
         required: false
         default: ''
-  push:
-    tags:
-      - 'v*'
 
 env:
   TARGET: qualcommax
@@ -53,50 +50,33 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: openwrt/openwrt
-          ref: main
+          ref: openwrt-25.12
           path: openwrt
           fetch-depth: 0
-
-      - name: Fetch PR #21495 (PZ-L8 device support + ath11k-smallbuffers)
-        working-directory: openwrt
-        run: |
-          git fetch origin pull/21495/head:pr-21495
-          git config user.email "builder@github.com"
-          git config user.name "GitHub Actions"
-          git merge pr-21495 --no-edit
 
       - name: Download BDF files for PZ-L8 WiFi
         working-directory: openwrt
         run: |
           # BDF (Board Data Files) are required for ath11k WiFi driver
-          # These files contain calibration data specific to this device
           # Source: firmware_qca-wireless PR #106 (extracted from official 501.11 firmware)
 
-          # Create directories for board-2.bin files
-          # These will be included in the firmware image via the files/ directory
           mkdir -p files/lib/firmware/ath11k/IPQ5018/hw1.0
           mkdir -p files/lib/firmware/ath11k/QCN6122/hw1.0
 
-          # Download BDF files
-          # IPQ5000 (2.4GHz SoC built-in WiFi) → board-2.bin for IPQ5018
+          # IPQ5000 (2.4GHz SoC built-in WiFi)
           curl -L -o files/lib/firmware/ath11k/IPQ5018/hw1.0/board-2.bin \
             "https://github.com/openwrt/firmware_qca-wireless/raw/f7ad5fee1924efdb5d8b2d1bf95bd3867d22e701/board-cmcc_pz-l8.ipq5018"
 
-          # QCN6102 (5GHz external WiFi module) → board-2.bin for QCN6122
+          # QCN6102 (5GHz external WiFi module)
           curl -L -o files/lib/firmware/ath11k/QCN6122/hw1.0/board-2.bin \
             "https://github.com/openwrt/firmware_qca-wireless/raw/f7ad5fee1924efdb5d8b2d1bf95bd3867d22e701/board-cmcc_pz-l8.qcn6122"
 
-          # Verify downloads
           echo "=== Downloaded BDF files ==="
           ls -la files/lib/firmware/ath11k/IPQ5018/hw1.0/
           ls -la files/lib/firmware/ath11k/QCN6122/hw1.0/
 
-          # Check file sizes (should be ~131KB each)
           SIZE_IPQ=$(stat -c%s "files/lib/firmware/ath11k/IPQ5018/hw1.0/board-2.bin")
           SIZE_QCN=$(stat -c%s "files/lib/firmware/ath11k/QCN6122/hw1.0/board-2.bin")
-
-          echo "IPQ5018 BDF size: $SIZE_IPQ bytes (expected: 131176)"
-          echo "QCN6122 BDF size: $SIZE_QCN bytes (expected: 131176)"
 
           if [ "$SIZE_IPQ" -lt 100000 ] || [ "$SIZE_QCN" -lt 100000 ]; then
             echo "ERROR: BDF files appear to be incomplete or corrupted"
@@ -110,19 +90,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ env.TARGET }}-v4-${{ github.ref_name }}-${{ hashFiles('openwrt/feeds.conf.default') }}
+          key: ccache-${{ env.TARGET }}-v5-${{ github.ref_name }}-${{ hashFiles('openwrt/feeds.conf.default') }}
           restore-keys: |
-            ccache-${{ env.TARGET }}-v4-${{ github.ref_name }}-
-            ccache-${{ env.TARGET }}-v4-
+            ccache-${{ env.TARGET }}-v5-${{ github.ref_name }}-
+            ccache-${{ env.TARGET }}-v5-
 
       - name: Cache toolchain
         uses: actions/cache@v4
         with:
           path: openwrt/staging_dir
-          key: toolchain-${{ env.TARGET }}-v4-${{ hashFiles('openwrt/include/version.mk') }}
-          restore-keys: toolchain-${{ env.TARGET }}-v4-
-
-      # Do NOT cache build_dir to ensure ipq-wifi is rebuilt with BDF files
+          key: toolchain-${{ env.TARGET }}-v5-${{ hashFiles('openwrt/include/version.mk') }}
+          restore-keys: toolchain-${{ env.TARGET }}-v5-
 
       - name: Configure ccache
         run: |
@@ -136,6 +114,109 @@ jobs:
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
+
+      - name: Apply PZ-L8 patches
+        working-directory: openwrt
+        run: |
+          # Patch 1: Enable WiFi in DTS (openwrt-25.12 has it disabled)
+          DTS_FILE="target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-pz-l8.dts"
+          
+          # Enable q6v5_wcss and wifi nodes
+          sed -i 's/status = "disabled";/status = "okay";/g' "$DTS_FILE"
+          
+          # Add boot-args for q6v5_wcss (required for 5GHz WiFi)
+          sed -i '/&q6v5_wcss {/,/};/c\&q6v5_wcss {\n\tboot-args = </*       type:*\t*/ 0x2 /* PCIE1\t*/\n\t\t     /*     length:*\t*/ 4\n\t\t     /*     UPD ID:*\t*/ 2\n\t\t     /* reset GPIO:*\t*/ 27\n\t\t     /*   reserved:*\t*/ 0 0>;\n\tstatus = "okay";\n};' "$DTS_FILE" || true
+          
+          echo "=== Patched DTS file ==="
+          grep -A5 "q6v5_wcss\|wifi {" "$DTS_FILE" | head -20
+
+          # Patch 2: Add ath11k-smallbuffers patch
+          PATCH_DIR="package/kernel/mac80211/patches/ath11k"
+          mkdir -p "$PATCH_DIR"
+          
+          cat > "$PATCH_DIR/951-wifi-ath11k-introduct-CONFIG_ATH11K_SMALLBUFFERS.patch" << 'PATCHEOF'
+From 4032fbc94b8cde0ff761b6dd6a278420e6f052b4 Mon Sep 17 00:00:00 2001
+From: Ziyang Huang <hzyitc@outlook.com>
+Date: Sun, 8 Sep 2024 16:52:04 +0800
+Subject: [PATCH 1/1] wifi: ath11k: introduct CONFIG_ATH11K_SMALLBUFFERS
+
+Signed-off-by: Ziyang Huang <hzyitc@outlook.com>
+---
+ drivers/net/wireless/ath/ath11k/dp.h | 10 +++++-----
+ 1 file changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/drivers/net/wireless/ath/ath11k/dp.h b/drivers/net/wireless/ath/ath11k/dp.h
+index 7a55afd33be8..d3d3b2aa800c 100644
+--- a/drivers/net/wireless/ath/ath11k/dp.h
++++ b/drivers/net/wireless/ath/ath11k/dp.h
+@@ -206,7 +206,7 @@ struct ath11k_pdev_dp {
+ #define DP_WBM_RELEASE_RING_SIZE	64
+ #define DP_TCL_DATA_RING_SIZE		512
+ #define DP_TCL_DATA_RING_SIZE_WCN6750	2048
+-#define DP_TX_COMP_RING_SIZE		32768
++#define DP_TX_COMP_RING_SIZE		(!IS_ENABLED(CONFIG_ATH11K_SMALLBUFFERS) ? 32768 : 2048)
+ #define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
+ #define DP_TCL_CMD_RING_SIZE		32
+ #define DP_TCL_STATUS_RING_SIZE		32
+@@ -217,12 +217,12 @@ struct ath11k_pdev_dp {
+ #define DP_REO_EXCEPTION_RING_SIZE	128
+ #define DP_REO_CMD_RING_SIZE		256
+ #define DP_REO_STATUS_RING_SIZE		2048
+-#define DP_RXDMA_BUF_RING_SIZE		4096
++#define DP_RXDMA_BUF_RING_SIZE		(!IS_ENABLED(CONFIG_ATH11K_SMALLBUFFERS) ? 4096 : 1024)
+ #define DP_RXDMA_REFILL_RING_SIZE	2048
+ #define DP_RXDMA_ERR_DST_RING_SIZE	1024
+-#define DP_RXDMA_MON_STATUS_RING_SIZE	1024
+-#define DP_RXDMA_MONITOR_BUF_RING_SIZE	4096
+-#define DP_RXDMA_MONITOR_DST_RING_SIZE	2048
++#define DP_RXDMA_MON_STATUS_RING_SIZE	(!IS_ENABLED(CONFIG_ATH11K_SMALLBUFFERS) ? 1024 : 512)
++#define DP_RXDMA_MONITOR_BUF_RING_SIZE	(!IS_ENABLED(CONFIG_ATH11K_SMALLBUFFERS) ? 4096 : 128)
++#define DP_RXDMA_MONITOR_DST_RING_SIZE	(!IS_ENABLED(CONFIG_ATH11K_SMALLBUFFERS) ? 2048 : 128)
+ #define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
+ 
+ #define DP_RX_RELEASE_RING_NUM	3
+-- 
+2.40.1
+PATCHEOF
+          
+          echo "=== Added ath11k-smallbuffers patch ==="
+          ls -la "$PATCH_DIR/"
+
+          # Patch 3: Update ath.mk to add ath11k-smallbuffers variant
+          ATH_MK="package/kernel/mac80211/ath.mk"
+          
+          # Add ath11k-smallbuffers to driver list
+          sed -i 's/ath11k ath11k-ahb/ath11k ath11k-smallbuffers ath11k-ahb/' "$ATH_MK"
+          
+          # Update ath11k config line to use variants
+          sed -i 's/config-\$(call config_package,ath11k) += ATH11K/config-$(call config_package,ath11k,regular) += ATH11K\nconfig-$(call config_package,ath11k-smallbuffers,smallbuffers) += ATH11K ATH11K_SMALLBUFFERS/' "$ATH_MK"
+          
+          echo "=== Patched ath.mk ==="
+          grep -E "ath11k|smallbuffers" "$ATH_MK" | head -10
+
+          # Patch 4: Update mac80211 Makefile for smallbuffers variant
+          MAC80211_MK="package/kernel/mac80211/Makefile"
+          sed -i '/C_DEFINES+= -DCONFIG_ATH10K_SMALLBUFFERS/a\\tC_DEFINES+= -DCONFIG_ATH11K_SMALLBUFFERS' "$MAC80211_MK"
+          
+          echo "=== Patched mac80211 Makefile ==="
+
+          # Patch 5: Update ipq50xx.mk to add DEVICE_PACKAGES
+          IPQ50XX_MK="target/linux/qualcommax/image/ipq50xx.mk"
+          sed -i '/define Device\/cmcc_pz-l8/,/^endef$/s/^endef$/\tDEVICE_PACKAGES := kmod-ath11k-smallbuffers ath11k-firmware-ipq5018-qcn6122\nendef/' "$IPQ50XX_MK"
+          
+          echo "=== Patched ipq50xx.mk ==="
+          grep -A10 "define Device/cmcc_pz-l8" "$IPQ50XX_MK"
+
+          # Patch 6: Update caldata script for PZ-L8
+          CALDATA="target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata"
+          if [ -f "$CALDATA" ]; then
+            # Add cmcc,pz-l8 to the caldata extraction cases
+            sed -i '/xiaomi,ax6000)/i\\tcmcc,pz-l8)|\\' "$CALDATA" 2>/dev/null || true
+            sed -i '/"ath11k\/QCN6122\/hw1.0\/cal-ahb-b00b040.wifi.bin")/,/esac/{ /;;/a\\tcmcc,pz-l8)\\n\t\tcaldata_extract "0:art" 0x1000 0x20000\\n\t\t;;
+            }' "$CALDATA" 2>/dev/null || true
+          fi
+          
+          echo "=== Patches applied successfully ==="
 
       - name: Create custom files for AP mode
         working-directory: openwrt
@@ -173,61 +254,48 @@ jobs:
               option netmask '255.255.255.0'
           EOF
 
-          # uci-defaults script to ensure AP mode network config on first boot
-          cat > files/etc/uci-defaults/99-ap-mode-network << 'EOF'
+          # UCIDEFAULTS script to configure fallback IP
+          cat > files/etc/uci-defaults/99-ap-mode-network << 'UCI'
           #!/bin/sh
-          # AP Mode Network Configuration for CMCC PZ-L8
-          # Bridges all ports (lan1, lan2, lan3, wan) together
+          # Configure AP mode network with DHCP fallback
 
-          uci -q batch << 'UCI'
-          delete network.@device[0]
-          delete network.lan
-          delete network.wan
-          delete network.wan6
+          # Set hostname
+          uci set system.@system[0].hostname='OpenWrt-AP'
 
-          set network.br_lan='device'
-          set network.br_lan.name='br-lan'
-          set network.br_lan.type='bridge'
-          add_list network.br_lan.ports='lan1'
-          add_list network.br_lan.ports='lan2'
-          add_list network.br_lan.ports='lan3'
-          add_list network.br_lan.ports='wan'
+          # Create static interface as fallback
+          uci set network.lan='interface'
+          uci set network.lan.device='br-lan'
+          uci set network.lan.proto='dhcp'
 
-          set network.lan='interface'
-          set network.lan.device='br-lan'
-          set network.lan.proto='dhcp'
-
-          set network.lan_static='interface'
-          set network.lan_static.device='br-lan'
-          set network.lan_static.proto='static'
-          set network.lan_static.ipaddr='192.168.10.1'
-          set network.lan_static.netmask='255.255.255.0'
-          UCI
+          uci set network.lan_static='interface'
+          uci set network.lan_static.device='br-lan'
+          uci set network.lan_static.proto='static'
+          uci set network.lan_static.ipaddr='192.168.10.1'
+          uci set network.lan_static.netmask='255.255.255.0'
 
           uci commit network
           exit 0
-          EOF
+          UCI
           chmod +x files/etc/uci-defaults/99-ap-mode-network
 
           # IPv6 configuration for AP mode
-          # Enable receiving Router Advertisements to get IPv6 address via SLAAC
-          # Disable forwarding so kernel accepts RA (forwarding=1 means router mode)
           mkdir -p files/etc/sysctl.d
           cat > files/etc/sysctl.d/99-ipv6-ap.conf << 'EOF'
           # IPv6 AP Mode Configuration
-          # Allow br-lan to receive Router Advertisements
           net.ipv6.conf.br-lan.accept_ra = 2
-          # Disable forwarding to accept RA (forwarding=1 = router mode, won't accept RA)
           net.ipv6.conf.br-lan.forwarding = 0
-          # Also set default values for any interface
           net.ipv6.conf.default.accept_ra = 2
           net.ipv6.conf.default.forwarding = 0
           EOF
 
+          echo "=== Created custom AP mode files ==="
+          ls -la files/etc/uci-defaults/
+          ls -la files/etc/config/
+          ls -la files/etc/sysctl.d/
+
       - name: Generate configuration
         working-directory: openwrt
         run: |
-          # Create our custom config
           cat > .config << 'EOF'
           # Target
           CONFIG_TARGET_qualcommax=y
@@ -244,8 +312,6 @@ jobs:
           # Image
           CONFIG_TARGET_ROOTFS_SQUASHFS=y
           CONFIG_TARGET_IMAGES_GZIP=y
-
-          # Include custom files
           CONFIG_INCLUDE_CONFIG=y
 
           # Kernel
@@ -254,7 +320,6 @@ jobs:
           CONFIG_KERNEL_DEBUG_FS=y
 
           # Disable router components - use =m to compile but NOT install to image
-          # This is the reliable way to exclude default packages
           CONFIG_PACKAGE_dnsmasq=m
           CONFIG_PACKAGE_odhcpd=m
           CONFIG_PACKAGE_odhcpd-ipv6only=m
@@ -275,7 +340,6 @@ jobs:
           CONFIG_PACKAGE_kmod-ath11k-ahb=y
           CONFIG_PACKAGE_kmod-ath11k-smallbuffers=y
           CONFIG_PACKAGE_ath11k-firmware-ipq5018-qcn6122=y
-          # BDF files are included directly via files/ directory, not via ipq-wifi package
           CONFIG_PACKAGE_ipq-wifi-cmcc_pz-l8=m
           CONFIG_PACKAGE_wpad-mesh-mbedtls=y
 
@@ -320,7 +384,7 @@ jobs:
 
           # Show final package selections
           echo "=== Final package configuration ==="
-          grep -E 'CONFIG_PACKAGE_(odhcp|dnsmasq|firewall|ppp)' .config || true
+          grep -E 'CONFIG_PACKAGE_(odhcp|dnsmasq|firewall|ppp|ath11k)' .config || true
           echo "==================================="
 
       - name: Download sources
@@ -351,10 +415,10 @@ jobs:
       - name: Verify BDF files are in place
         working-directory: openwrt
         run: |
-          echo "=== Verifying BDF files in files/ directory ==="
+          echo "=== Verifying BDF files ==="
           ls -la files/lib/firmware/ath11k/IPQ5018/hw1.0/
           ls -la files/lib/firmware/ath11k/QCN6122/hw1.0/
-          echo "==============================================="
+          echo "==========================="
 
       - name: Prepare artifacts
         run: |
@@ -367,55 +431,52 @@ jobs:
           Build: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
           Target: ${{ env.TARGET }}/${{ env.SUBTARGET }}
           Device: ${{ env.DEVICE }}
-          Mode: AP Only with Mesh
-          PR: #21495 applied (ath11k-smallbuffers)
-          BDF: firmware_qca-wireless PR #106 (from official 501.11 firmware)
+          Mode: AP (Access Point)
+          Branch: openwrt-25.12
+          Patches: ath11k-smallbuffers (manual)
 
           Network Configuration:
-          - All ports (lan1, lan2, lan3, wan) bridged to br-lan
-          - DHCP client enabled
-          - Static fallback: 192.168.10.1
+          - All ports bridged (lan1, lan2, lan3, wan)
+          - DHCP client with 192.168.10.1 fallback
+          - IPv6 via SLAAC
 
           WiFi:
           - 2.4GHz: IPQ5000 (SoC built-in)
           - 5GHz: QCN6102
-          - Driver: ath11k-smallbuffers (optimized for 256MB RAM)
+          - Driver: ath11k-smallbuffers
+          - BDF: firmware_qca-wireless PR #106
           EOF
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: openwrt-${{ env.DEVICE }}-${{ github.run_number }}
+          name: openwrt-${{ env.DEVICE }}-ap-${{ github.run_number }}
           path: release/
           retention-days: 30
 
       - name: Create release
-        if: inputs.release_tag != '' || startsWith(github.ref, 'refs/tags/')
+        if: inputs.release_tag != ''
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ inputs.release_tag || github.ref_name }}
+          tag_name: ${{ inputs.release_tag }}
           files: release/*
           body: |
             OpenWrt Firmware for CMCC PZ-L8 (AP Mode)
 
             ## Features
-            - AP Mode Only
-            - Mesh support (802.11s)
-            - usteer for roaming
-            - ath11k-smallbuffers for low-RAM optimization (256MB)
+            - AP Mode with all ports bridged
+            - 802.11s mesh support with usteer
+            - ath11k-smallbuffers for 256MB RAM optimization
             - WiFi BDF from official firmware 501.11
+            - Based on openwrt-25.12 stable branch
 
-            ## Network Configuration
-            - All ports (lan1, lan2, lan3, wan) bridged together
-            - DHCP client enabled
-            - Static fallback IP: 192.168.10.1
+            ## Network
+            - All ports bridged as br-lan
+            - DHCP client with 192.168.10.1 fallback
+            - IPv6 via SLAAC
 
             ## WiFi
             - 2.4GHz: IPQ5000 (SoC built-in)
             - 5GHz: QCN6102
-
-            ## Known Issues
-            - First boot may take longer due to uci-defaults execution
-            - WiFi may need a few seconds to initialize after boot
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
