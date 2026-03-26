@@ -71,6 +71,13 @@ jobs:
           # Commit 2eb683d enables WiFi and adds device packages
           git cherry-pick 2eb683dcfde2ef0fb46b800e843dce424feaa078 --no-commit || true
 
+          # Revert ipq-wifi/Makefile changes - we don't need them because:
+          # - PR #21495 adds ipq-wifi-cmcc_pz-l8 package definition
+          # - But firmware_qca-wireless PR #106 (BDF files) was REJECTED
+          # - So ipq-wifi-cmcc_pz-l8 would be an empty package
+          # - We handle BDF files manually by downloading to files/ directory
+          git checkout HEAD -- package/firmware/ipq-wifi/Makefile || true
+
           # Handle DTS path difference between branches
           # main branch: target/linux/qualcommax/dts/ipq5018-pz-l8.dts
           # openwrt-25.12: target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-pz-l8.dts
@@ -268,7 +275,8 @@ jobs:
           CONFIG_PACKAGE_kmod-ath11k-ahb=y
           CONFIG_PACKAGE_kmod-ath11k-smallbuffers=y
           CONFIG_PACKAGE_ath11k-firmware-ipq5018-qcn6122=y
-          CONFIG_PACKAGE_ipq-wifi-cmcc_pz-l8=m
+          # Note: BDF files are included manually via files/ directory, not via ipq-wifi package
+          # (firmware_qca-wireless PR #106 was rejected, so ipq-wifi-cmcc_pz-l8 has no BDF files)
           CONFIG_PACKAGE_wpad-mesh-mbedtls=y
 
           # Mesh

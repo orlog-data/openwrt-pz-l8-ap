@@ -69,6 +69,9 @@ jobs:
           echo "=== Cherry-picking commit 2: enable wifi for PZ-L8 ==="
           git cherry-pick 2eb683dcfde2ef0fb46b800e843dce424feaa078 --no-commit || true
 
+          # Revert ipq-wifi/Makefile changes - BDF files not in qca-wireless (PR #106 rejected)
+          git checkout HEAD -- package/firmware/ipq-wifi/Makefile || true
+
           # Handle DTS path difference between branches
           if [ -f "target/linux/qualcommax/dts/ipq5018-pz-l8.dts" ]; then
             echo "Moving DTS file to correct location for openwrt-25.12..."
@@ -175,7 +178,8 @@ jobs:
           CONFIG_PACKAGE_kmod-ath11k-ahb=y
           CONFIG_PACKAGE_kmod-ath11k-smallbuffers=y
           CONFIG_PACKAGE_ath11k-firmware-ipq5018-qcn6122=y
-          CONFIG_PACKAGE_ipq-wifi-cmcc_pz-l8=m
+          # Note: BDF files are included manually via files/ directory, not via ipq-wifi package
+          # (firmware_qca-wireless PR #106 was rejected, so ipq-wifi-cmcc_pz-l8 has no BDF files)
           CONFIG_PACKAGE_wpad-basic-mbedtls=y
 
           # LuCI
