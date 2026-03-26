@@ -50,7 +50,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: openwrt/openwrt
-          ref: openwrt-25.12
+          ref: main
           path: openwrt
           fetch-depth: 0
 
@@ -60,13 +60,13 @@ jobs:
           git fetch origin pull/21495/head:pr-21495
           git config user.email "builder@github.com"
           git config user.name "GitHub Actions"
-          git merge pr-21495 --no-edit || git merge pr-21495 --allow-unrelated-histories --no-edit || true
+          git merge pr-21495 --no-edit
 
       - name: Fetch PR #21496 (PHY-to-PHY CPU link for 2Gbps)
         working-directory: openwrt
         run: |
           git fetch origin pull/21496/head:pr-21496
-          git merge pr-21496 --no-edit || git merge pr-21496 --allow-unrelated-histories --no-edit || true
+          git merge pr-21496 --no-edit
 
       - name: Download BDF files for PZ-L8 WiFi
         working-directory: openwrt
