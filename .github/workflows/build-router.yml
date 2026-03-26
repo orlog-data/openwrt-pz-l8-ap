@@ -214,6 +214,7 @@ jobs:
           CONFIG_PACKAGE_urandom-seed=y
           CONFIG_PACKAGE_urngd=y
           CONFIG_PACKAGE_zram-swap=y
+          CONFIG_PACKAGE_kmod-lib-zstd=y
           CONFIG_PACKAGE_iw=y
           CONFIG_PACKAGE_iwinfo=y
           EOF

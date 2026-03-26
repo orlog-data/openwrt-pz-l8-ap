@@ -186,17 +186,17 @@ uci commit system
 
 #### Optimize Zram
 
-Increase zram size and use better compression:
+Increase zram size and use zstd compression for better memory efficiency:
 
 ```bash
-# Set zram algorithm to zstd and size to 180MB
-uci set system.zram.compress_algorithm='zstd'
-uci set system.zram.size='180'
+# Enable zstd compression and set size to 180MB
+uci set system.@system[0].zram_comp_algo='zstd'
+uci set system.@system[0].zram_size_mb='180'
 uci commit system
 reboot
 ```
 
-> **Note**: zstd compression provides better ratio but consumes more CPU.
+> **Note**: zstd compression provides better compression ratio than default lzo, but consumes more CPU. The firmware includes `kmod-lib-zstd` module to support this.
 
 ```bash
 # Check memory usage
