@@ -128,17 +128,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ env.TARGET }}-v6-${{ github.ref_name }}-${{ hashFiles('openwrt/feeds.conf.default') }}
+          key: ccache-${{ env.TARGET }}-v7-${{ github.ref_name }}-${{ hashFiles('openwrt/feeds.conf.default') }}
           restore-keys: |
-            ccache-${{ env.TARGET }}-v6-${{ github.ref_name }}-
-            ccache-${{ env.TARGET }}-v6-
+            ccache-${{ env.TARGET }}-v7-${{ github.ref_name }}-
+            ccache-${{ env.TARGET }}-v7-
 
       - name: Cache toolchain
         uses: actions/cache@v4
         with:
           path: openwrt/staging_dir
-          key: toolchain-${{ env.TARGET }}-v6-${{ hashFiles('openwrt/include/version.mk') }}
-          restore-keys: toolchain-${{ env.TARGET }}-v6-
+          key: toolchain-${{ env.TARGET }}-v7-${{ hashFiles('openwrt/include/version.mk') }}
+          restore-keys: toolchain-${{ env.TARGET }}-v7-
 
       - name: Configure ccache
         run: |
@@ -309,11 +309,17 @@ jobs:
           CONFIG_PACKAGE_uci=y
           CONFIG_PACKAGE_urandom-seed=y
           CONFIG_PACKAGE_urngd=y
-          # ZRAM with zstd compression
+
+          # ZRAM with lzo and zstd compression (user selectable at runtime)
+          # Both backends enabled, default to lzo-rle for lower CPU usage
+          # User can switch via: echo zstd > /sys/block/zram0/comp_algorithm
+          # Or via UCI: option zram_comp_algo 'zstd'
           CONFIG_PACKAGE_kmod-zram=y
+          CONFIG_KERNEL_ZRAM_BACKEND_LZO=y
           CONFIG_KERNEL_ZRAM_BACKEND_ZSTD=y
-          CONFIG_KERNEL_ZRAM_DEF_COMP_ZSTD=y
+          CONFIG_KERNEL_ZRAM_DEF_COMP_LZORLE=y
           CONFIG_PACKAGE_zram-swap=y
+
           CONFIG_PACKAGE_iw=y
           CONFIG_PACKAGE_iwinfo=y
           EOF
@@ -321,6 +327,11 @@ jobs:
           # Run defconfig twice to normalize and resolve dependencies
           make defconfig
           make defconfig
+
+          # Show final zram configuration
+          echo "=== Final ZRAM configuration ==="
+          grep -E 'ZRAM|LZO|ZSTD' .config | grep -v "^#"
+          echo "================================"
 
           # Show final package selections
           echo "=== Final package configuration ==="
@@ -385,6 +396,12 @@ jobs:
           - 5GHz: QCN6102
           - Driver: ath11k-smallbuffers
           - BDF: firmware_qca-wireless PR #106
+
+          ZRAM:
+          - Compression: lzo, lzo-rle, zstd (user selectable)
+          - Default: lzo-rle (low CPU usage)
+          - Switch: echo zstd > /sys/block/zram0/comp_algorithm
+          - Or UCI: option zram_comp_algo 'zstd'
           EOF
 
       - name: Upload artifacts
@@ -418,5 +435,11 @@ jobs:
             ## WiFi
             - 2.4GHz: IPQ5000 (SoC built-in)
             - 5GHz: QCN6102
+
+            ## ZRAM Compression
+            - Supported: lzo, lzo-rle, zstd
+            - Default: lzo-rle (low CPU usage)
+            - To switch: `echo zstd > /sys/block/zram0/comp_algorithm`
+            - Or via UCI: `option zram_comp_algo 'zstd'`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
