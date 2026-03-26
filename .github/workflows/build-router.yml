@@ -1,6 +1,6 @@
 # GitHub Actions workflow for building OpenWrt firmware for CMCC PZ-L8
 # Target: Router mode with full routing features
-# Based on openwrt-25.12 branch with manual patches
+# Uses openwrt-25.12 branch with cherry-picked patches from PR #21495
 
 name: Build OpenWrt for CMCC PZ-L8 (Router Mode)
 
@@ -54,6 +54,32 @@ jobs:
           path: openwrt
           fetch-depth: 0
 
+      - name: Cherry-pick PR #21495 commits
+        working-directory: openwrt
+        run: |
+          git config user.email "builder@github.com"
+          git config user.name "GitHub Actions"
+
+          # Fetch PR #21495 (contains 2 commits)
+          git fetch origin pull/21495/head:pr-21495
+
+          echo "=== Cherry-picking commit 1: ath11k-smallbuffers ==="
+          git cherry-pick f55109d36e7479c878e4691c10f4294e545c8bdd --no-commit || true
+
+          echo "=== Cherry-picking commit 2: enable wifi for PZ-L8 ==="
+          git cherry-pick 2eb683dcfde2ef0fb46b800e843dce424feaa078 --no-commit || true
+
+          # Handle DTS path difference between branches
+          if [ -f "target/linux/qualcommax/dts/ipq5018-pz-l8.dts" ]; then
+            echo "Moving DTS file to correct location for openwrt-25.12..."
+            mv target/linux/qualcommax/dts/ipq5018-pz-l8.dts \
+               target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-pz-l8.dts
+          fi
+
+          echo "=== Cherry-pick status ==="
+          git status --short
+          echo "=========================="
+
       - name: Download BDF files for PZ-L8 WiFi
         working-directory: openwrt
         run: |
@@ -89,19 +115,19 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ env.TARGET }}-router-v5-${{ hashFiles('openwrt/feeds.conf.default') }}
+          key: ccache-${{ env.TARGET }}-router-v6-${{ hashFiles('openwrt/feeds.conf.default') }}
           restore-keys: |
-            ccache-${{ env.TARGET }}-router-v5-
-            ccache-${{ env.TARGET }}-v5-
+            ccache-${{ env.TARGET }}-router-v6-
+            ccache-${{ env.TARGET }}-v6-
 
       - name: Cache toolchain
         uses: actions/cache@v4
         with:
           path: openwrt/staging_dir
-          key: toolchain-${{ env.TARGET }}-router-v5-${{ hashFiles('openwrt/include/version.mk') }}
+          key: toolchain-${{ env.TARGET }}-router-v6-${{ hashFiles('openwrt/include/version.mk') }}
           restore-keys: |
-            toolchain-${{ env.TARGET }}-router-v5-
-            toolchain-${{ env.TARGET }}-v5-
+            toolchain-${{ env.TARGET }}-router-v6-
+            toolchain-${{ env.TARGET }}-v6-
 
       - name: Configure ccache
         run: |
@@ -115,86 +141,6 @@ jobs:
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-
-      - name: Apply PZ-L8 patches
-        working-directory: openwrt
-        run: |
-          # Patch 1: Enable WiFi in DTS
-          DTS_FILE="target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-pz-l8.dts"
-          sed -i 's/status = "disabled";/status = "okay";/g' "$DTS_FILE"
-          sed -i '/&q6v5_wcss {/,/};/c\&q6v5_wcss {\n\tboot-args = </*       type:*\t*/ 0x2 /* PCIE1\t*/\n\t\t     /*     length:*\t*/ 4\n\t\t     /*     UPD ID:*\t*/ 2\n\t\t     /* reset GPIO:*\t*/ 27\n\t\t     /*   reserved:*\t*/ 0 0>;\n\tstatus = "okay";\n};' "$DTS_FILE" || true
-          
-          echo "=== Patched DTS file ==="
-
-          # Patch 2: Add ath11k-smallbuffers patch
-          PATCH_DIR="package/kernel/mac80211/patches/ath11k"
-          mkdir -p "$PATCH_DIR"
-          
-          cat > "$PATCH_DIR/951-wifi-ath11k-introduct-CONFIG_ATH11K_SMALLBUFFERS.patch" << 'PATCHEOF'
-From 4032fbc94b8cde0ff761b6dd6a278420e6f052b4 Mon Sep 17 00:00:00 2001
-From: Ziyang Huang <hzyitc@outlook.com>
-Date: Sun, 8 Sep 2024 16:52:04 +0800
-Subject: [PATCH 1/1] wifi: ath11k: introduct CONFIG_ATH11K_SMALLBUFFERS
-
-Signed-off-by: Ziyang Huang <hzyitc@outlook.com>
----
- drivers/net/wireless/ath/ath11k/dp.h | 10 +++++-----
- 1 file changed, 5 insertions(+), 5 deletions(-)
-
-diff --git a/drivers/net/wireless/ath/ath11k/dp.h b/drivers/net/wireless/ath/ath11k/dp.h
-index 7a55afd33be8..d3d3b2aa800c 100644
---- a/drivers/net/wireless/ath/ath11k/dp.h
-+++ b/drivers/net/wireless/ath/ath11k/dp.h
-@@ -206,7 +206,7 @@ struct ath11k_pdev_dp {
- #define DP_WBM_RELEASE_RING_SIZE	64
- #define DP_TCL_DATA_RING_SIZE		512
- #define DP_TCL_DATA_RING_SIZE_WCN6750	2048
--#define DP_TX_COMP_RING_SIZE		32768
-+#define DP_TX_COMP_RING_SIZE		(!IS_ENABLED(CONFIG_ATH11K_SMALLBUFFERS) ? 32768 : 2048)
- #define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
- #define DP_TCL_CMD_RING_SIZE		32
- #define DP_TCL_STATUS_RING_SIZE		32
-@@ -217,12 +217,12 @@ struct ath11k_pdev_dp {
- #define DP_REO_EXCEPTION_RING_SIZE	128
- #define DP_REO_CMD_RING_SIZE		256
- #define DP_REO_STATUS_RING_SIZE		2048
--#define DP_RXDMA_BUF_RING_SIZE		4096
-+#define DP_RXDMA_BUF_RING_SIZE		(!IS_ENABLED(CONFIG_ATH11K_SMALLBUFFERS) ? 4096 : 1024)
- #define DP_RXDMA_REFILL_RING_SIZE	2048
- #define DP_RXDMA_ERR_DST_RING_SIZE	1024
--#define DP_RXDMA_MON_STATUS_RING_SIZE	1024
--#define DP_RXDMA_MONITOR_BUF_RING_SIZE	4096
--#define DP_RXDMA_MONITOR_DST_RING_SIZE	2048
-+#define DP_RXDMA_MON_STATUS_RING_SIZE	(!IS_ENABLED(CONFIG_ATH11K_SMALLBUFFERS) ? 1024 : 512)
-+#define DP_RXDMA_MONITOR_BUF_RING_SIZE	(!IS_ENABLED(CONFIG_ATH11K_SMALLBUFFERS) ? 4096 : 128)
-+#define DP_RXDMA_MONITOR_DST_RING_SIZE	(!IS_ENABLED(CONFIG_ATH11K_SMALLBUFFERS) ? 2048 : 128)
- #define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
- 
- #define DP_RX_RELEASE_RING_NUM	3
--- 
-2.40.1
-PATCHEOF
-
-          # Patch 3: Update ath.mk
-          ATH_MK="package/kernel/mac80211/ath.mk"
-          sed -i 's/ath11k ath11k-ahb/ath11k ath11k-smallbuffers ath11k-ahb/' "$ATH_MK"
-          sed -i 's/config-\$(call config_package,ath11k) += ATH11K/config-$(call config_package,ath11k,regular) += ATH11K\nconfig-$(call config_package,ath11k-smallbuffers,smallbuffers) += ATH11K ATH11K_SMALLBUFFERS/' "$ATH_MK"
-
-          # Patch 4: Update mac80211 Makefile
-          MAC80211_MK="package/kernel/mac80211/Makefile"
-          sed -i '/C_DEFINES+= -DCONFIG_ATH10K_SMALLBUFFERS/a\\tC_DEFINES+= -DCONFIG_ATH11K_SMALLBUFFERS' "$MAC80211_MK"
-
-          # Patch 5: Update ipq50xx.mk
-          IPQ50XX_MK="target/linux/qualcommax/image/ipq50xx.mk"
-          sed -i '/define Device\/cmcc_pz-l8/,/^endef$/s/^endef$/\tDEVICE_PACKAGES := kmod-ath11k-smallbuffers ath11k-firmware-ipq5018-qcn6122\nendef/' "$IPQ50XX_MK"
-
-          # Patch 6: Update caldata script
-          CALDATA="target/linux/qualcommax/ipq50xx/base-files/etc/hotplug.d/firmware/11-ath11k-caldata"
-          if [ -f "$CALDATA" ]; then
-            sed -i '/xiaomi,ax6000)/i\\tcmcc,pz-l8)|\\' "$CALDATA" 2>/dev/null || true
-          fi
-
-          echo "=== Patches applied successfully ==="
 
       - name: Generate configuration
         working-directory: openwrt
@@ -318,7 +264,7 @@ PATCHEOF
           Device: ${{ env.DEVICE }}
           Mode: Router (Full Features)
           Branch: openwrt-25.12
-          Patches: ath11k-smallbuffers (manual)
+          Patches: PR #21495 (cherry-picked)
 
           Network Configuration:
           - WAN port for PPPoE/DHCP
