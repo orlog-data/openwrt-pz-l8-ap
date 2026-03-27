@@ -1,6 +1,6 @@
 # GitHub Actions workflow for building OpenWrt firmware for CMCC PZ-L8
 # Target: Router mode with full routing features
-# Uses openwrt-25.12 branch with cherry-picked patches from PR #21495
+# Uses main branch with PR #21495 merged
 
 name: Build OpenWrt for CMCC PZ-L8 (Router Mode)
 
@@ -50,38 +50,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: openwrt/openwrt
-          ref: openwrt-25.12
+          ref: main
           path: openwrt
           fetch-depth: 0
 
-      - name: Cherry-pick PR #21495 commits
+      - name: Merge PR #21495
         working-directory: openwrt
         run: |
           git config user.email "builder@github.com"
           git config user.name "GitHub Actions"
 
-          # Fetch PR #21495 (contains 2 commits)
+          # Fetch and merge PR #21495 (PZ-L8 support + ath11k-smallbuffers)
           git fetch origin pull/21495/head:pr-21495
+          git merge pr-21495 --no-edit
 
-          echo "=== Cherry-picking commit 1: ath11k-smallbuffers ==="
-          git cherry-pick f55109d36e7479c878e4691c10f4294e545c8bdd --no-commit || true
-
-          echo "=== Cherry-picking commit 2: enable wifi for PZ-L8 ==="
-          git cherry-pick 2eb683dcfde2ef0fb46b800e843dce424feaa078 --no-commit || true
-
-          # Revert ipq-wifi/Makefile changes - BDF files not in qca-wireless (PR #106 rejected)
+          # Revert ipq-wifi/Makefile changes - we handle BDF files manually
           git checkout HEAD -- package/firmware/ipq-wifi/Makefile || true
 
-          # Handle DTS path difference between branches
-          if [ -f "target/linux/qualcommax/dts/ipq5018-pz-l8.dts" ]; then
-            echo "Moving DTS file to correct location for openwrt-25.12..."
-            mv target/linux/qualcommax/dts/ipq5018-pz-l8.dts \
-               target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-pz-l8.dts
-          fi
-
-          echo "=== Cherry-pick status ==="
+          echo "=== Merge status ==="
           git status --short
-          echo "=========================="
+          echo "===================="
 
       - name: Download BDF files for PZ-L8 WiFi
         working-directory: openwrt
@@ -118,19 +106,17 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ env.TARGET }}-router-v7-${{ hashFiles('openwrt/feeds.conf.default') }}
+          key: ccache-${{ env.TARGET }}-router-v8-${{ hashFiles('openwrt/feeds.conf.default') }}
           restore-keys: |
-            ccache-${{ env.TARGET }}-router-v7-
-            ccache-${{ env.TARGET }}-v7-
+            ccache-${{ env.TARGET }}-router-v8-
+            ccache-${{ env.TARGET }}-v8-
 
       - name: Cache toolchain
         uses: actions/cache@v4
         with:
           path: openwrt/staging_dir
-          key: toolchain-${{ env.TARGET }}-router-v7-${{ hashFiles('openwrt/include/version.mk') }}
-          restore-keys: |
-            toolchain-${{ env.TARGET }}-router-v7-
-            toolchain-${{ env.TARGET }}-v7-
+          key: toolchain-${{ env.TARGET }}-router-v8-${{ hashFiles('openwrt/include/version.mk') }}
+          restore-keys: toolchain-${{ env.TARGET }}-v8-
 
       - name: Configure ccache
         run: |
@@ -178,8 +164,7 @@ jobs:
           CONFIG_PACKAGE_kmod-ath11k-ahb=y
           CONFIG_PACKAGE_kmod-ath11k-smallbuffers=y
           CONFIG_PACKAGE_ath11k-firmware-ipq5018-qcn6122=y
-          # Note: BDF files are included manually via files/ directory, not via ipq-wifi package
-          # (firmware_qca-wireless PR #106 was rejected, so ipq-wifi-cmcc_pz-l8 has no BDF files)
+          # Note: BDF files are included manually via files/ directory
           CONFIG_PACKAGE_wpad-basic-mbedtls=y
 
           # LuCI
@@ -282,8 +267,8 @@ jobs:
           Target: ${{ env.TARGET }}/${{ env.SUBTARGET }}
           Device: ${{ env.DEVICE }}
           Mode: Router (Full Features)
-          Branch: openwrt-25.12
-          Patches: PR #21495 (cherry-picked)
+          Branch: main
+          Patches: PR #21495 (merged)
 
           Network Configuration:
           - WAN port for PPPoE/DHCP
@@ -324,7 +309,7 @@ jobs:
             - IPv6 support (odhcp6c + odhcpd-ipv6only)
             - ath11k-smallbuffers for low-RAM optimization
             - WiFi BDF from official firmware 501.11
-            - Based on openwrt-25.12 stable branch
+            - Based on OpenWrt main branch
 
             ## Network Configuration
             - WAN: wan port (DHCP or PPPoE client)

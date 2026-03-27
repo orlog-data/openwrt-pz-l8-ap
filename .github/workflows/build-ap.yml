@@ -1,6 +1,6 @@
 # GitHub Actions workflow for building OpenWrt firmware for CMCC PZ-L8
 # Target: AP mode - access point deployment
-# Uses openwrt-25.12 branch with cherry-picked patches from PR #21495
+# Uses main branch with PR #21495 merged
 
 name: Build OpenWrt for CMCC PZ-L8 (AP Mode)
 
@@ -50,47 +50,26 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: openwrt/openwrt
-          ref: openwrt-25.12
+          ref: main
           path: openwrt
           fetch-depth: 0
 
-      - name: Cherry-pick PR #21495 commits
+      - name: Merge PR #21495
         working-directory: openwrt
         run: |
           git config user.email "builder@github.com"
           git config user.name "GitHub Actions"
 
-          # Fetch PR #21495 (contains 2 commits)
+          # Fetch and merge PR #21495 (PZ-L8 support + ath11k-smallbuffers)
           git fetch origin pull/21495/head:pr-21495
+          git merge pr-21495 --no-edit
 
-          echo "=== Cherry-picking commit 1: ath11k-smallbuffers ==="
-          # Commit f55109d adds ath11k-smallbuffers support
-          git cherry-pick f55109d36e7479c878e4691c10f4294e545c8bdd --no-commit || true
-
-          echo "=== Cherry-picking commit 2: enable wifi for PZ-L8 ==="
-          # Commit 2eb683d enables WiFi and adds device packages
-          git cherry-pick 2eb683dcfde2ef0fb46b800e843dce424feaa078 --no-commit || true
-
-          # Revert ipq-wifi/Makefile changes - we don't need them because:
-          # - PR #21495 adds ipq-wifi-cmcc_pz-l8 package definition
-          # - But firmware_qca-wireless PR #106 (BDF files) was REJECTED
-          # - So ipq-wifi-cmcc_pz-l8 would be an empty package
-          # - We handle BDF files manually by downloading to files/ directory
+          # Revert ipq-wifi/Makefile changes - we handle BDF files manually
           git checkout HEAD -- package/firmware/ipq-wifi/Makefile || true
 
-          # Handle DTS path difference between branches
-          # main branch: target/linux/qualcommax/dts/ipq5018-pz-l8.dts
-          # openwrt-25.12: target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-pz-l8.dts
-          if [ -f "target/linux/qualcommax/dts/ipq5018-pz-l8.dts" ]; then
-            echo "Moving DTS file to correct location for openwrt-25.12..."
-            mv target/linux/qualcommax/dts/ipq5018-pz-l8.dts \
-               target/linux/qualcommax/files/arch/arm64/boot/dts/qcom/ipq5018-pz-l8.dts
-          fi
-
-          # Check status
-          echo "=== Cherry-pick status ==="
+          echo "=== Merge status ==="
           git status --short
-          echo "=========================="
+          echo "===================="
 
       - name: Download BDF files for PZ-L8 WiFi
         working-directory: openwrt
@@ -122,23 +101,22 @@ jobs:
           fi
 
           echo "BDF files downloaded successfully!"
-          echo "These will be installed directly to /lib/firmware/ath11k/ in the image"
 
       - name: Cache ccache
         uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-${{ env.TARGET }}-v7-${{ github.ref_name }}-${{ hashFiles('openwrt/feeds.conf.default') }}
+          key: ccache-${{ env.TARGET }}-ap-v8-${{ hashFiles('openwrt/feeds.conf.default') }}
           restore-keys: |
-            ccache-${{ env.TARGET }}-v7-${{ github.ref_name }}-
-            ccache-${{ env.TARGET }}-v7-
+            ccache-${{ env.TARGET }}-ap-v8-
+            ccache-${{ env.TARGET }}-v8-
 
       - name: Cache toolchain
         uses: actions/cache@v4
         with:
           path: openwrt/staging_dir
-          key: toolchain-${{ env.TARGET }}-v7-${{ hashFiles('openwrt/include/version.mk') }}
-          restore-keys: toolchain-${{ env.TARGET }}-v7-
+          key: toolchain-${{ env.TARGET }}-ap-v8-${{ hashFiles('openwrt/include/version.mk') }}
+          restore-keys: toolchain-${{ env.TARGET }}-v8-
 
       - name: Configure ccache
         run: |
@@ -275,8 +253,7 @@ jobs:
           CONFIG_PACKAGE_kmod-ath11k-ahb=y
           CONFIG_PACKAGE_kmod-ath11k-smallbuffers=y
           CONFIG_PACKAGE_ath11k-firmware-ipq5018-qcn6122=y
-          # Note: BDF files are included manually via files/ directory, not via ipq-wifi package
-          # (firmware_qca-wireless PR #106 was rejected, so ipq-wifi-cmcc_pz-l8 has no BDF files)
+          # Note: BDF files are included manually via files/ directory
           CONFIG_PACKAGE_wpad-mesh-mbedtls=y
 
           # Mesh
@@ -333,11 +310,6 @@ jobs:
           grep -E 'ZRAM|LZO|ZSTD' .config | grep -v "^#"
           echo "================================"
 
-          # Show final package selections
-          echo "=== Final package configuration ==="
-          grep -E 'CONFIG_PACKAGE_(odhcp|dnsmasq|firewall|ppp|ath11k)' .config || true
-          echo "==================================="
-
       - name: Download sources
         working-directory: openwrt
         run: |
@@ -383,8 +355,8 @@ jobs:
           Target: ${{ env.TARGET }}/${{ env.SUBTARGET }}
           Device: ${{ env.DEVICE }}
           Mode: AP (Access Point)
-          Branch: openwrt-25.12
-          Patches: PR #21495 (cherry-picked)
+          Branch: main
+          Patches: PR #21495 (merged)
 
           Network Configuration:
           - All ports bridged (lan1, lan2, lan3, wan)
@@ -425,7 +397,7 @@ jobs:
             - 802.11s mesh support with usteer
             - ath11k-smallbuffers for 256MB RAM optimization
             - WiFi BDF from official firmware 501.11
-            - Based on openwrt-25.12 stable branch
+            - Based on OpenWrt main branch
 
             ## Network
             - All ports bridged as br-lan
