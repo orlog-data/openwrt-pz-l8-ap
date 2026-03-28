@@ -24,6 +24,22 @@ jobs:
     timeout-minutes: 720
 
     steps:
+      - name: Free disk space
+        run: |
+          # Aggressive cleanup to free disk space
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android/sdk
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo rm -rf /usr/local/share/boost
+          sudo rm -rf /opt/hostedtoolcache/Python
+          sudo rm -rf /opt/hostedtoolcache/Go
+          sudo rm -rf /opt/hostedtoolcache/node
+          sudo rm -rf ~/.cache
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/*
+          df -h
+
       - name: Maximize build space
         uses: easimon/maximize-build-space@master
         with:
