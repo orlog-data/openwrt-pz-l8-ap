@@ -453,17 +453,11 @@ jobs:
           mkdir -p release
 
           # Copy and rename AP files
-          for f in artifacts/ap/*-factory.bin; do
-            [ -f "$f" ] && cp "$f" "release/openwrt-pz-l8-factory-ap.bin"
-          done
           for f in artifacts/ap/*-sysupgrade.bin; do
             [ -f "$f" ] && cp "$f" "release/openwrt-pz-l8-sysupgrade-ap.bin"
           done
 
           # Copy and rename Router files
-          for f in artifacts/router/*-factory.bin; do
-            [ -f "$f" ] && cp "$f" "release/openwrt-pz-l8-factory-router.bin"
-          done
           for f in artifacts/router/*-sysupgrade.bin; do
             [ -f "$f" ] && cp "$f" "release/openwrt-pz-l8-sysupgrade-router.bin"
           done
@@ -486,10 +480,10 @@ jobs:
 
           | File | Mode | Description |
           |------|------|-------------|
-          | `openwrt-pz-l8-factory-ap.bin` | AP | Flash from stock firmware |
-          | `openwrt-pz-l8-sysupgrade-ap.bin` | AP | Upgrade from existing OpenWrt |
-          | `openwrt-pz-l8-factory-router.bin` | Router | Flash from stock firmware |
-          | `openwrt-pz-l8-sysupgrade-router.bin` | Router | Upgrade from existing OpenWrt |
+          | `openwrt-pz-l8-sysupgrade-ap.bin` | AP | Sysupgrade image |
+          | `openwrt-pz-l8-sysupgrade-router.bin` | Router | Sysupgrade image |
+
+          > **Note:** Factory images are not generated for NAND devices. Use the official OpenWrt factory image to flash the device first.
 
           ### AP Mode
           - All ports bridged (lan1, lan2, lan3, wan)
