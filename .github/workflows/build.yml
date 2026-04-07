@@ -73,11 +73,11 @@ jobs:
           git fetch origin pull/21495/head:pr-21495
           git merge pr-21495 --no-edit
 
-          # Revert ipq-wifi/Makefile changes - we handle BDF files manually
-          git checkout HEAD -- package/firmware/ipq-wifi/Makefile || true
-
           echo "=== Merge status ==="
           git status --short
+
+          echo "=== PZ-L8 device definition (UbiFit provides factory.ubi) ==="
+          grep -A 15 "define Device/cmcc_pz-l8" target/linux/qualcommax/image/ipq50xx.mk
 
       - name: Merge PR #21495 + #21496 (Router)
         if: matrix.mode == 'Router'
@@ -94,30 +94,11 @@ jobs:
           git fetch origin pull/21496/head:pr-21496
           git merge pr-21496 --no-edit
 
-          # Revert ipq-wifi/Makefile changes - we handle BDF files manually
-          git checkout HEAD -- package/firmware/ipq-wifi/Makefile || true
-
           echo "=== Merge status ==="
           git status --short
 
-      - name: Add factory.ubi image support
-        working-directory: openwrt
-        run: |
-          # Add factory.ubi image generation for PZ-L8
-          # This allows flashing via SSH or U-Boot using factory.ubi file
-          awk '
-          /define Device\/cmcc_pz-l8/ { found=1 }
-          found && /^endef/ {
-            print "\tIMAGES += factory.ubi"
-            print "\tIMAGE/factory.ubi := append-ubi"
-            found=0
-          }
-          { print }
-          ' target/linux/qualcommax/image/ipq50xx.mk > target/linux/qualcommax/image/ipq50xx.mk.tmp
-          mv target/linux/qualcommax/image/ipq50xx.mk.tmp target/linux/qualcommax/image/ipq50xx.mk
-
-          echo "=== Modified device definition ==="
-          grep -A 18 "define Device/cmcc_pz-l8" target/linux/qualcommax/image/ipq50xx.mk
+          echo "=== PZ-L8 device definition (UbiFit provides factory.ubi) ==="
+          grep -A 15 "define Device/cmcc_pz-l8" target/linux/qualcommax/image/ipq50xx.mk
 
       - name: Download BDF files for PZ-L8 WiFi
         working-directory: openwrt
@@ -421,11 +402,31 @@ jobs:
 
       - name: Prepare artifacts
         run: |
+          echo "=== All build output files ==="
+          find openwrt/bin/targets/qualcommax/ipq50xx/ -type f | sort
+
+          echo "=== Checking for factory.ubi ==="
+          if ls openwrt/bin/targets/qualcommax/ipq50xx/*factory*.* 2>/dev/null; then
+            echo "factory.ubi found!"
+          else
+            echo "WARNING: No factory image found in build output"
+          fi
+
+          echo "=== Checking for sysupgrade.bin ==="
+          if ls openwrt/bin/targets/qualcommax/ipq50xx/*sysupgrade*.* 2>/dev/null; then
+            echo "sysupgrade.bin found!"
+          else
+            echo "WARNING: No sysupgrade image found in build output"
+          fi
+
           mkdir -p artifacts
           find openwrt/bin/targets -name "*.bin" -exec cp {} artifacts/ \;
           find openwrt/bin/targets -name "*.img" -exec cp {} artifacts/ \;
           find openwrt/bin/targets -name "*.ubi" -exec cp {} artifacts/ \;
           cd artifacts && sha256sum * > sha256sums.txt
+
+          echo "=== Artifacts to upload ==="
+          ls -la artifacts/
 
           if [ "${{ matrix.mode }}" = "AP" ]; then
             PATCHES="PR #21495"
