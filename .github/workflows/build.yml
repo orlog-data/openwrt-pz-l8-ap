@@ -100,6 +100,25 @@ jobs:
           echo "=== Merge status ==="
           git status --short
 
+      - name: Add factory.ubi image support
+        working-directory: openwrt
+        run: |
+          # Add factory.ubi image generation for PZ-L8
+          # This allows flashing via SSH or U-Boot using factory.ubi file
+          awk '
+          /define Device\/cmcc_pz-l8/ { found=1 }
+          found && /^endef/ {
+            print "\tIMAGES += factory.ubi"
+            print "\tIMAGE/factory.ubi := append-ubi"
+            found=0
+          }
+          { print }
+          ' target/linux/qualcommax/image/ipq50xx.mk > target/linux/qualcommax/image/ipq50xx.mk.tmp
+          mv target/linux/qualcommax/image/ipq50xx.mk.tmp target/linux/qualcommax/image/ipq50xx.mk
+
+          echo "=== Modified device definition ==="
+          grep -A 18 "define Device/cmcc_pz-l8" target/linux/qualcommax/image/ipq50xx.mk
+
       - name: Download BDF files for PZ-L8 WiFi
         working-directory: openwrt
         run: |
@@ -405,6 +424,7 @@ jobs:
           mkdir -p artifacts
           find openwrt/bin/targets -name "*.bin" -exec cp {} artifacts/ \;
           find openwrt/bin/targets -name "*.img" -exec cp {} artifacts/ \;
+          find openwrt/bin/targets -name "*.ubi" -exec cp {} artifacts/ \;
           cd artifacts && sha256sum * > sha256sums.txt
 
           if [ "${{ matrix.mode }}" = "AP" ]; then
@@ -456,10 +476,16 @@ jobs:
           for f in artifacts/ap/*-sysupgrade.bin; do
             [ -f "$f" ] && cp "$f" "release/openwrt-pz-l8-sysupgrade-ap.bin"
           done
+          for f in artifacts/ap/*-factory.ubi; do
+            [ -f "$f" ] && cp "$f" "release/openwrt-pz-l8-factory-ap.ubi"
+          done
 
           # Copy and rename Router files
           for f in artifacts/router/*-sysupgrade.bin; do
             [ -f "$f" ] && cp "$f" "release/openwrt-pz-l8-sysupgrade-router.bin"
+          done
+          for f in artifacts/router/*-factory.ubi; do
+            [ -f "$f" ] && cp "$f" "release/openwrt-pz-l8-factory-router.ubi"
           done
 
           # Generate sha256sums
@@ -480,10 +506,10 @@ jobs:
 
           | File | Mode | Description |
           |------|------|-------------|
+          | `openwrt-pz-l8-factory-ap.ubi` | AP | Factory UBI image (SSH/U-Boot) |
           | `openwrt-pz-l8-sysupgrade-ap.bin` | AP | Sysupgrade image |
+          | `openwrt-pz-l8-factory-router.ubi` | Router | Factory UBI image (SSH/U-Boot) |
           | `openwrt-pz-l8-sysupgrade-router.bin` | Router | Sysupgrade image |
-
-          > **Note:** Factory images are not generated for NAND devices. Use the official OpenWrt factory image to flash the device first.
 
           ### AP Mode
           - All ports bridged (lan1, lan2, lan3, wan)
@@ -507,11 +533,34 @@ jobs:
           - Supported: lzo, lzo-rle, zstd
           - Default: lzo-rle (low CPU usage)
           - Switch: `echo zstd > /sys/block/zram0/comp_algorithm`
-          - UCI: `option zram_comp_algo 'zstd'`
+          - UCI: `option zram_comp_algo zstd`
 
           ### Installation
-          1. Flash factory.bin via stock firmware web UI
-          2. Or use sysupgrade to upgrade from existing OpenWrt
+
+          #### Method 1: SSH (from stock firmware)
+          1. Enable SSH on stock firmware
+          2. Upload factory.ubi to /tmp
+          3. Run:
+             ```sh
+             export rootfs=$(cat /proc/mtd | grep rootfs | grep -v _ | cut -d: -f1)
+             ubidetach -f -p /dev/${rootfs}
+             ubiformat /dev/${rootfs} -y -f /tmp/factory.ubi
+             reboot
+             ```
+
+          #### Method 2: U-Boot TFTP
+          1. Place factory.ubi on TFTP server
+          2. Enter U-Boot CLI and run:
+             ```
+             tftpboot <server_ip>:factory.ubi
+             flash rootfs
+             reset
+             ```
+
+          #### Method 3: Sysupgrade (from existing OpenWrt)
+          ```sh
+          sysupgrade -n /tmp/sysupgrade.bin
+          ```
           EOF
 
           ls -la
