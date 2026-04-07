@@ -414,7 +414,7 @@ jobs:
 
       - name: Build
         working-directory: openwrt
-        run: make -j$(nproc) V=w || make -j1 V=s
+        run: make -j$(nproc) V=w || make -j1 V=w || make -j1 V=s
 
       - name: Show ccache stats
         run: ccache -s
